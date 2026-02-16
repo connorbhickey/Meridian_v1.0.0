@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from portopt.constants import Colors, Fonts
+from portopt.gui.widgets.table_context_menu import setup_table_context_menu
 from portopt.data.models import Portfolio, Holding
 from portopt.gui.panels.base_panel import BasePanel
 
@@ -59,6 +60,7 @@ class PortfolioPanel(BasePanel):
         self._table.verticalHeader().setDefaultSectionSize(22)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
+        setup_table_context_menu(self._table)
         self._layout.addWidget(self._table)
 
         # Bottom bar

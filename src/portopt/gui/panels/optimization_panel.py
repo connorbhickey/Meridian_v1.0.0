@@ -35,6 +35,7 @@ class OptimizationPanel(BasePanel):
     panel_title = "OPTIMIZATION"
 
     run_requested = Signal(dict)  # emits config dict
+    save_requested = Signal()     # B3: request to save result for comparison
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -209,6 +210,33 @@ class OptimizationPanel(BasePanel):
         """)
         layout.addWidget(self._progress)
 
+        # B3: Save result for comparison
+        self._save_btn = QPushButton("SAVE TO COMPARE")
+        self._save_btn.setFixedHeight(28)
+        self._save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.BG_INPUT};
+                color: {Colors.PROFIT};
+                border: 1px solid {Colors.BORDER};
+                border-radius: 4px;
+                font-family: {Fonts.SANS};
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background: {Colors.PROFIT_DIM};
+                border-color: {Colors.PROFIT};
+            }}
+            QPushButton:disabled {{
+                color: {Colors.TEXT_MUTED};
+                border-color: {Colors.BORDER};
+            }}
+        """)
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(lambda: self.save_requested.emit())
+        layout.addWidget(self._save_btn)
+
         layout.addStretch()
         self.content_layout.addLayout(layout)
 
@@ -236,6 +264,10 @@ class OptimizationPanel(BasePanel):
         """Toggle run/progress state."""
         self._run_btn.setEnabled(not running)
         self._progress.setVisible(running)
+
+    def set_has_result(self, has_result: bool):
+        """Enable/disable the save button based on whether a result exists."""
+        self._save_btn.setEnabled(has_result)
 
     # ── Internal ─────────────────────────────────────────────────────
 

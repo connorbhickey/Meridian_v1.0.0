@@ -29,6 +29,8 @@ from portopt.gui.panels.network_panel import NetworkPanel
 from portopt.gui.panels.dendrogram_panel import DendrogramPanel
 from portopt.gui.panels.trade_blotter_panel import TradeBlotterPanel
 from portopt.gui.panels.risk_panel import RiskPanel
+from portopt.gui.panels.comparison_panel import ComparisonPanel
+from portopt.gui.panels.scenario_panel import ScenarioPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.data_controller import DataController
@@ -139,6 +141,8 @@ class MainWindow(QMainWindow):
         self.dendrogram_panel = DendrogramPanel(self)
         self.trade_blotter_panel = TradeBlotterPanel(self)
         self.risk_panel = RiskPanel(self)
+        self.comparison_panel = ComparisonPanel(self)
+        self.scenario_panel = ScenarioPanel(self)
         self.console_panel = ConsolePanel(self)
 
         for panel in [
@@ -146,7 +150,8 @@ class MainWindow(QMainWindow):
             self.correlation_panel, self.optimization_panel, self.weights_panel,
             self.frontier_panel, self.backtest_panel, self.metrics_panel,
             self.attribution_panel, self.network_panel, self.dendrogram_panel,
-            self.trade_blotter_panel, self.risk_panel, self.console_panel,
+            self.trade_blotter_panel, self.risk_panel, self.comparison_panel,
+            self.scenario_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -187,6 +192,11 @@ class MainWindow(QMainWindow):
         self.opt_controller.error.connect(
             lambda msg: self.console_panel.log_error(f"Opt error: {msg}")
         )
+        # B1: Wire progress + running signals to status bar
+        self.opt_controller.progress.connect(lambda msg: self._op_status.setText(msg))
+        self.opt_controller.running_changed.connect(
+            lambda running: self._start_elapsed() if running else self._stop_elapsed()
+        )
 
         # Backtest controller
         self.bt_controller = BacktestController(self.data_controller, self)
@@ -200,12 +210,27 @@ class MainWindow(QMainWindow):
         self.bt_controller.error.connect(
             lambda msg: self.console_panel.log_error(f"Backtest error: {msg}")
         )
+        # B1: Wire progress + running signals to status bar
+        self.bt_controller.progress.connect(lambda msg: self._op_status.setText(msg))
+        self.bt_controller.running_changed.connect(
+            lambda running: self._start_elapsed() if running else self._stop_elapsed()
+        )
 
         # Panel signals
         self.portfolio_panel.connect_requested.connect(self._show_fidelity_login)
         self.portfolio_panel.refresh_requested.connect(self._refresh_fidelity)
         self.optimization_panel.run_requested.connect(self._run_optimization)
         self.backtest_panel.run_requested.connect(self._run_backtest)
+
+        # B3: Save result for comparison
+        self.optimization_panel.save_requested.connect(self._save_to_comparison)
+
+        # B4: Risk alert → console warning
+        self.risk_panel.alert_triggered.connect(
+            lambda name, val, thresh: self.console_panel.log_warning(
+                f"ALERT: {name} = {val:.4f} breaches threshold {thresh:.4f}"
+            )
+        )
 
     # ── Logging ──────────────────────────────────────────────────────
     def _setup_logging(self):
@@ -247,10 +272,34 @@ class MainWindow(QMainWindow):
             result.volatility, result.expected_return, result.method,
         )
 
+        # B3: Enable save-to-compare button
+        self.optimization_panel.set_has_result(True)
+
+        # B5: Feed scenario panel with base data
+        if self.opt_controller._last_mu is not None and self.opt_controller._last_cov is not None:
+            self.scenario_panel.set_base_data(
+                self.opt_controller._last_mu,
+                self.opt_controller._last_cov,
+                result.weights,
+            )
+
+        # Store last result for comparison save
+        self._last_opt_result = result
+
         self.console_panel.log_success(
             f"Optimization complete: {result.method} | "
             f"Sharpe={result.sharpe_ratio:.3f}"
         )
+
+    def _save_to_comparison(self):
+        """B3: Save current optimization result to comparison panel."""
+        result = getattr(self, "_last_opt_result", None)
+        if result is None:
+            self.console_panel.log_warning("No optimization result to save.")
+            return
+        name = result.method if isinstance(result.method, str) else result.method.name
+        self.comparison_panel.add_snapshot(result, name)
+        self.console_panel.log_info(f"Saved '{name}' to comparison panel.")
 
     def _on_frontier_complete(self, risks, returns):
         self.frontier_panel.clear_plot()
@@ -593,10 +642,44 @@ class MainWindow(QMainWindow):
         self._data_status.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; padding: 0 8px;")
         status.addWidget(self._data_status)
 
+        # B1: Operation progress label
+        self._op_status = QLabel("")
+        self._op_status.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
+        self._op_status.setStyleSheet(f"color: {Colors.ACCENT}; padding: 0 8px;")
+        status.addWidget(self._op_status)
+
+        # B1: Elapsed timer label
+        self._elapsed_label = QLabel("")
+        self._elapsed_label.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
+        self._elapsed_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; padding: 0 8px;")
+        status.addPermanentWidget(self._elapsed_label)
+
         self._cache_status = QLabel("")
         self._cache_status.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
         self._cache_status.setStyleSheet(f"color: {Colors.TEXT_MUTED}; padding: 0 8px;")
         status.addPermanentWidget(self._cache_status)
+
+        # B1: Elapsed timer
+        self._elapsed_seconds = 0
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._tick_elapsed)
+
+    def _tick_elapsed(self):
+        self._elapsed_seconds += 1
+        self._elapsed_label.setText(f"⏱ {self._elapsed_seconds}s")
+
+    def _start_elapsed(self):
+        self._elapsed_seconds = 0
+        self._elapsed_label.setText("⏱ 0s")
+        self._elapsed_timer.start()
+
+    def _stop_elapsed(self):
+        self._elapsed_timer.stop()
+        if self._elapsed_seconds > 0:
+            self._elapsed_label.setText(f"⏱ {self._elapsed_seconds}s (done)")
+        QTimer.singleShot(5000, lambda: self._elapsed_label.setText(""))
+        QTimer.singleShot(5000, lambda: self._op_status.setText(""))
 
     def set_fidelity_status(self, connected: bool):
         if connected:

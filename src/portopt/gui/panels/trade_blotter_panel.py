@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
+from portopt.gui.widgets.table_context_menu import setup_table_context_menu
 
 
 class TradeBlotterPanel(BasePanel):
@@ -89,6 +90,7 @@ class TradeBlotterPanel(BasePanel):
                 font-weight: bold;
             }}
         """)
+        setup_table_context_menu(self._table)
         layout.addWidget(self._table)
         self.content_layout.addLayout(layout)
 

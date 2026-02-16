@@ -1,23 +1,33 @@
-"""Dockable RISK panel — VaR/CVaR display, drawdown chart, risk decomposition."""
+"""Dockable RISK panel — VaR/CVaR display, drawdown chart, risk decomposition.
 
-from PySide6.QtCore import Qt
+Enhanced with B4: alert indicators on gauges + configurable thresholds.
+"""
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame, QSplitter,
+    QPushButton,
 )
 import pyqtgraph as pg
 import numpy as np
 
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
+from portopt.gui.dialogs.alert_config_dialog import DEFAULT_ALERTS
 
 
 class RiskPanel(BasePanel):
     panel_id = "risk"
     panel_title = "RISK"
 
+    # B4: emitted when a metric breaches its alert threshold
+    alert_triggered = Signal(str, float, float)  # metric_name, value, threshold
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._gauges = {}
+        self._indicators = {}   # B4: key -> QLabel (dot indicator)
+        self._alerts = dict(DEFAULT_ALERTS)
         self._build_ui()
 
     def _build_ui(self):
@@ -28,11 +38,49 @@ class RiskPanel(BasePanel):
         splitter = QSplitter(Qt.Vertical)
 
         # ── Top: Risk metrics gauges ─────────────────────────────────
+        gauges_container = QVBoxLayout()
+
+        # Toolbar with gear icon
+        toolbar = QHBoxLayout()
+        toolbar.addStretch()
+        gear_btn = QPushButton("⚙ ALERTS")
+        gear_btn.setFixedHeight(20)
+        gear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {Colors.TEXT_MUTED};
+                border: none;
+                font-family: {Fonts.SANS};
+                font-size: 9px;
+                padding: 0 6px;
+            }}
+            QPushButton:hover {{
+                color: {Colors.ACCENT};
+            }}
+        """)
+        gear_btn.clicked.connect(self._open_alert_config)
+        toolbar.addWidget(gear_btn)
+
         gauges_frame = QFrame()
         gauges_frame.setStyleSheet(f"background: {Colors.BG_SECONDARY}; border: 1px solid {Colors.BORDER};")
-        gauge_layout = QGridLayout(gauges_frame)
-        gauge_layout.setContentsMargins(6, 6, 6, 6)
-        gauge_layout.setSpacing(4)
+
+        gauges_inner = QVBoxLayout(gauges_frame)
+        gauges_inner.setContentsMargins(0, 0, 0, 0)
+        gauges_inner.setSpacing(0)
+
+        # Toolbar inside the frame
+        toolbar_widget = QFrame()
+        toolbar_widget.setFixedHeight(20)
+        toolbar_widget.setStyleSheet("border: none;")
+        toolbar_layout = QHBoxLayout(toolbar_widget)
+        toolbar_layout.setContentsMargins(4, 0, 4, 0)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(gear_btn)
+        gauges_inner.addWidget(toolbar_widget)
+
+        gauge_grid = QGridLayout()
+        gauge_grid.setContentsMargins(6, 2, 6, 6)
+        gauge_grid.setSpacing(4)
 
         gauge_defs = [
             ("var_95", "VaR 95%"),
@@ -46,8 +94,9 @@ class RiskPanel(BasePanel):
         for i, (key, label) in enumerate(gauge_defs):
             row, col = i // 3, i % 3
             cell = self._make_gauge(key, label)
-            gauge_layout.addWidget(cell, row, col)
+            gauge_grid.addWidget(cell, row, col)
 
+        gauges_inner.addLayout(gauge_grid)
         splitter.addWidget(gauges_frame)
 
         # ── Middle: Risk decomposition chart ─────────────────────────
@@ -65,7 +114,7 @@ class RiskPanel(BasePanel):
         self._dd_plot.setLabel("bottom", "Date", color=Colors.TEXT_SECONDARY)
         splitter.addWidget(self._dd_plot)
 
-        splitter.setSizes([120, 160, 220])
+        splitter.setSizes([140, 160, 220])
         layout.addWidget(splitter)
         self.content_layout.addLayout(layout)
 
@@ -84,12 +133,30 @@ class RiskPanel(BasePanel):
         vlayout.setContentsMargins(8, 4, 8, 4)
         vlayout.setSpacing(0)
 
+        # Top row: label + indicator dot
+        top_row = QHBoxLayout()
+        top_row.setSpacing(4)
+
         lbl = QLabel(label)
         lbl.setStyleSheet(
             f"color: {Colors.TEXT_MUTED}; font-family: {Fonts.SANS}; "
             f"font-size: 8px; font-weight: bold; border: none;"
         )
-        vlayout.addWidget(lbl)
+        top_row.addWidget(lbl)
+        top_row.addStretch()
+
+        # B4: Alert indicator dot
+        indicator = QLabel("●")
+        indicator.setFixedWidth(12)
+        indicator.setStyleSheet(
+            f"color: {Colors.PROFIT}; font-size: 8px; border: none;"
+        )
+        indicator.setToolTip("OK")
+        indicator.hide()  # Hidden until alerts are configured
+        self._indicators[key] = indicator
+        top_row.addWidget(indicator)
+
+        vlayout.addLayout(top_row)
 
         val = QLabel("—")
         val.setStyleSheet(
@@ -102,6 +169,10 @@ class RiskPanel(BasePanel):
         return frame
 
     # ── Public API ───────────────────────────────────────────────────
+
+    def set_alert_config(self, alerts: dict):
+        """Update alert thresholds from the config dialog."""
+        self._alerts = alerts
 
     def set_risk_metrics(self, metrics: dict):
         """Update risk gauge values from a dict of key -> float."""
@@ -139,6 +210,50 @@ class RiskPanel(BasePanel):
                 f"color: {color}; font-family: {Fonts.MONO}; "
                 f"font-size: 14px; font-weight: bold; border: none;"
             )
+
+            # B4: Check alert thresholds
+            self._check_alert(key, value)
+
+    def _check_alert(self, key: str, value: float):
+        """Check if a metric breaches its alert threshold."""
+        indicator = self._indicators.get(key)
+        if not indicator:
+            return
+
+        alert_cfg = self._alerts.get(key, {})
+        if not alert_cfg.get("enabled", False):
+            indicator.hide()
+            return
+
+        indicator.show()
+        threshold = alert_cfg.get("threshold", 0.0)
+
+        # For negative metrics (VaR, CVaR, drawdown), breach means value < threshold
+        # For positive metrics (volatility), breach means value > abs(threshold)
+        breached = False
+        if key in ("var_95", "cvar_95", "max_drawdown"):
+            breached = value < threshold
+        else:
+            breached = abs(value) > abs(threshold)
+
+        if breached:
+            indicator.setStyleSheet(
+                f"color: {Colors.LOSS}; font-size: 8px; border: none;"
+            )
+            indicator.setToolTip(f"⚠ ALERT: {value:.4f} breaches threshold {threshold:.4f}")
+            self.alert_triggered.emit(key, value, threshold)
+        else:
+            indicator.setStyleSheet(
+                f"color: {Colors.PROFIT}; font-size: 8px; border: none;"
+            )
+            indicator.setToolTip("OK")
+
+    def _open_alert_config(self):
+        """Open the alert configuration dialog."""
+        from portopt.gui.dialogs.alert_config_dialog import AlertConfigDialog
+        dialog = AlertConfigDialog(self._alerts, self)
+        if dialog.exec() == AlertConfigDialog.DialogCode.Accepted:
+            self._alerts = dialog.get_alerts()
 
     def set_drawdown_chart(self, dates_epoch, drawdowns):
         """Plot drawdown series (values should be negative fractions)."""

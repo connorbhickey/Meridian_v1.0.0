@@ -128,7 +128,9 @@ class OptimizationController(QObject):
         max_weight = config.get("max_weight", 1.0)
 
         # Estimate covariance and returns
+        self.progress.emit("Estimating covariance matrix...")
         cov = estimate_covariance(prices, method=cov_est)
+        self.progress.emit("Estimating expected returns...")
         mu = estimate_returns(prices, method=ret_est, risk_free_rate=risk_free)
 
         # Build constraints
@@ -146,6 +148,7 @@ class OptimizationController(QObject):
         linkage_matrix = None
 
         # Dispatch to correct optimizer
+        self.progress.emit(f"Running {method.name} optimizer...")
         if method == OptMethod.HRP:
             returns_df = prices.pct_change().dropna()
             result = hrp_optimize(
@@ -220,6 +223,7 @@ class OptimizationController(QObject):
             result = optimizer.optimize()
 
         # Compute efficient frontier for MVO-like methods
+        self.progress.emit("Computing efficient frontier...")
         frontier_risks = None
         frontier_returns = None
         if method not in (OptMethod.HRP, OptMethod.HERC):
@@ -235,6 +239,7 @@ class OptimizationController(QObject):
                 logger.warning("Frontier computation failed: %s", e)
 
         # Per-asset risk/return
+        self.progress.emit("Computing correlation, MST & risk metrics...")
         asset_vols = np.sqrt(np.diag(cov.values))
         asset_mus = mu.values
 
@@ -262,14 +267,19 @@ class OptimizationController(QObject):
             "linkage_matrix": linkage_matrix,
             "mst": mst_data,
             "risk_free_rate": risk_free,
+            "_mu": mu,
+            "_cov": cov,
         }
 
     def _on_optimization_done(self, output: dict):
         """Handle optimization results on main thread."""
         self._running = False
         self.running_changed.emit(False)
+        self.progress.emit("Optimization complete ✓")
         result: OptimizationResult = output["result"]
         self._last_result = result
+        self._last_mu = output.get("_mu")
+        self._last_cov = output.get("_cov")
 
         self.optimization_complete.emit(result)
         self.status_changed.emit(

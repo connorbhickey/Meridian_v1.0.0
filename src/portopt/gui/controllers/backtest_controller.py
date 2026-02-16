@@ -147,14 +147,17 @@ class BacktestController(QObject):
             walk_forward=wf_config,
         )
 
+        self.progress.emit("Running backtest engine...")
         engine = BacktestEngine(self._prices, bt_config)
         output = engine.run()
+        self.progress.emit("Computing backtest metrics...")
         return output
 
     def _on_backtest_done(self, output: BacktestOutput):
         """Handle backtest results on main thread."""
         self._running = False
         self.running_changed.emit(False)
+        self.progress.emit("Backtest complete ✓")
         self._last_output = output
         self.backtest_complete.emit(output)
 

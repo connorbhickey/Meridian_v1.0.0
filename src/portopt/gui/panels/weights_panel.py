@@ -10,6 +10,7 @@ import numpy as np
 
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
+from portopt.gui.widgets.table_context_menu import setup_table_context_menu
 
 PALETTE = [
     "#00d4ff", "#00ff88", "#ff4444", "#f0b429", "#a855f7",
@@ -73,6 +74,7 @@ class WeightsPanel(BasePanel):
                 font-weight: bold;
             }}
         """)
+        setup_table_context_menu(self._table)
         layout.addWidget(self._table)
 
         # Bar chart view

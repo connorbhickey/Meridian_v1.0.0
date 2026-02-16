@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from portopt.constants import Colors, Fonts
+from portopt.gui.widgets.table_context_menu import setup_table_context_menu
 from portopt.gui.panels.base_panel import BasePanel
 
 
@@ -51,6 +52,7 @@ class WatchlistPanel(BasePanel):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
         self._table.cellDoubleClicked.connect(self._on_row_selected)
+        setup_table_context_menu(self._table)
         self._layout.addWidget(self._table)
 
         self._watchlist: list[dict] = []

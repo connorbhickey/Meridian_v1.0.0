@@ -158,4 +158,6 @@ class PanelID(Enum):
     DENDROGRAM = "dendrogram"
     TRADE_BLOTTER = "trade_blotter"
     RISK = "risk"
+    COMPARISON = "comparison"
+    SCENARIO = "scenario"
     CONSOLE = "console"
