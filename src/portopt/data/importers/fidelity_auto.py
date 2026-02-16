@@ -110,7 +110,7 @@ class FidelityAutoImporter:
             raise
         except Exception as e:
             logger.error("Fidelity login error: %s", e)
-            return False, False
+            raise  # Surface real error to controller/UI
 
     def complete_2fa(self, code: str, save_device: bool = True) -> bool:
         """Complete 2FA with the code sent to the user's phone.
