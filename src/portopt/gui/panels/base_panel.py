@@ -27,6 +27,7 @@ class BasePanel(QDockWidget):
         self._layout = QVBoxLayout(self._container)
         self._layout.setContentsMargins(4, 4, 4, 4)
         self._layout.setSpacing(2)
+        self.content_layout = self._layout
         self.setWidget(self._container)
 
     def add_placeholder(self, text: str = ""):
