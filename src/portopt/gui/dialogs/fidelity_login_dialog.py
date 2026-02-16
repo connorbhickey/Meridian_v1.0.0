@@ -1,15 +1,19 @@
-"""First-run Fidelity login dialog with 2FA support and Playwright setup."""
+"""Fidelity connection dialog — CSV import (primary) + browser automation (secondary)."""
+
+import webbrowser
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox, QStackedWidget, QWidget, QProgressBar,
-    QGroupBox, QFormLayout,
+    QGroupBox, QFormLayout, QFileDialog,
 )
 
 from portopt.constants import Colors, Fonts
 from portopt.utils.threading import run_in_thread
+
+_FIDELITY_POSITIONS_URL = "https://digital.fidelity.com/ftgw/digital/portfolio/positions"
 
 
 # Named page constants for stack navigation
@@ -22,17 +26,18 @@ class _Page:
 
 
 class FidelityLoginDialog(QDialog):
-    """Multi-step Fidelity login dialog: [playwright setup] -> credentials -> 2FA -> done."""
+    """Fidelity connection dialog with CSV import as primary method."""
 
     login_requested = Signal(str, str, str)  # username, password, totp_secret
     interactive_login_requested = Signal()   # open browser for manual login
+    csv_imported = Signal(str)               # path to CSV file
     twofa_submitted = Signal(str)            # code
     skip_requested = Signal()
 
     def __init__(self, parent=None, show_playwright_setup: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Connect to Fidelity")
-        self.setFixedSize(440, 500)
+        self.setFixedSize(480, 520)
         self.setModal(True)
         self._worker = None  # prevent GC of install worker
 
@@ -45,11 +50,13 @@ class FidelityLoginDialog(QDialog):
         header.setFont(QFont(Fonts.SANS, Fonts.SIZE_HEADER, QFont.Weight.Bold))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setStyleSheet(f"color: {Colors.ACCENT}; letter-spacing: 2px;")
+        header.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(header)
 
-        subtitle = QLabel("Link your Fidelity account to view holdings")
+        subtitle = QLabel("Import your Fidelity holdings into Meridian")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Fonts.SIZE_SMALL}pt;")
+        subtitle.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(subtitle)
 
         # Stacked pages
@@ -64,7 +71,7 @@ class FidelityLoginDialog(QDialog):
 
         # Bottom buttons
         btn_layout = QHBoxLayout()
-        self._skip_btn = QPushButton("Skip")
+        self._skip_btn = QPushButton("Cancel")
         self._skip_btn.clicked.connect(self._on_skip)
         self._skip_btn.setStyleSheet(f"color: {Colors.TEXT_MUTED};")
         btn_layout.addWidget(self._skip_btn)
@@ -90,6 +97,7 @@ class FidelityLoginDialog(QDialog):
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info.setWordWrap(True)
         info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         page_layout.addWidget(info)
 
         page_layout.addSpacing(16)
@@ -132,7 +140,6 @@ class FidelityLoginDialog(QDialog):
         if success:
             self._pw_status.setText("Firefox installed successfully!")
             self._pw_status.setStyleSheet(f"color: {Colors.PROFIT}; font-size: {Fonts.SIZE_SMALL}pt;")
-            # Transition to credentials page after brief delay
             from PySide6.QtCore import QTimer
             QTimer.singleShot(1000, lambda: self._stack.setCurrentIndex(_Page.CREDENTIALS))
         else:
@@ -147,30 +154,42 @@ class FidelityLoginDialog(QDialog):
         self._pw_status.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
 
     def _setup_login_page(self):
-        """Page 1: Login options — browser login (primary) + auto-connect (secondary)."""
+        """Page 1: CSV import (primary) + browser automation (secondary)."""
         page = QWidget()
         form_layout = QVBoxLayout(page)
-        form_layout.setContentsMargins(0, 8, 0, 0)
+        form_layout.setContentsMargins(0, 4, 0, 0)
 
-        # Primary action: Login in Browser (recommended)
-        browser_info = QLabel(
-            "Log in to Fidelity in a browser window.\n"
-            "You handle credentials and 2FA yourself — most reliable method."
+        # ── Primary: CSV Import ──
+        csv_info = QLabel(
+            "1. Log in to Fidelity in your browser\n"
+            "2. Go to Positions and click \"Download\"\n"
+            "3. Import the CSV file below"
         )
-        browser_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        browser_info.setWordWrap(True)
-        browser_info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Fonts.SIZE_SMALL}pt;")
-        form_layout.addWidget(browser_info)
+        csv_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        csv_info.setWordWrap(True)
+        csv_info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Fonts.SIZE_SMALL}pt;")
+        csv_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        form_layout.addWidget(csv_info)
 
-        self._browser_login_btn = QPushButton("Login in Browser (Recommended)")
-        self._browser_login_btn.setProperty("primary", True)
-        self._browser_login_btn.setFixedHeight(38)
-        self._browser_login_btn.clicked.connect(self._on_browser_login)
-        form_layout.addWidget(self._browser_login_btn)
+        form_layout.addSpacing(4)
+
+        open_fidelity_btn = QPushButton("Open Fidelity Positions Page")
+        open_fidelity_btn.clicked.connect(
+            lambda: webbrowser.open(_FIDELITY_POSITIONS_URL)
+        )
+        form_layout.addWidget(open_fidelity_btn)
+
+        form_layout.addSpacing(4)
+
+        self._import_csv_btn = QPushButton("Import Positions CSV")
+        self._import_csv_btn.setProperty("primary", True)
+        self._import_csv_btn.setFixedHeight(38)
+        self._import_csv_btn.clicked.connect(self._on_import_csv)
+        form_layout.addWidget(self._import_csv_btn)
 
         form_layout.addSpacing(8)
 
-        # Separator
+        # ── Separator ──
         sep_layout = QHBoxLayout()
         sep_line_l = QLabel()
         sep_line_l.setFixedHeight(1)
@@ -186,10 +205,10 @@ class FidelityLoginDialog(QDialog):
         sep_layout.addWidget(sep_line_r, 1)
         form_layout.addLayout(sep_layout)
 
-        # Secondary: Automated login with credentials
-        group = QGroupBox("Auto-Connect (Advanced)")
+        # ── Secondary: Auto-Connect ──
+        group = QGroupBox("Auto-Connect (Experimental)")
         form = QFormLayout(group)
-        form.setSpacing(8)
+        form.setSpacing(6)
 
         self._username_input = QLineEdit()
         self._username_input.setPlaceholderText("Fidelity username")
@@ -206,7 +225,7 @@ class FidelityLoginDialog(QDialog):
 
         form_layout.addWidget(group)
 
-        self._remember_check = QCheckBox("Save credentials securely (Windows Credential Manager)")
+        self._remember_check = QCheckBox("Save credentials (Windows Credential Manager)")
         self._remember_check.setChecked(True)
         self._remember_check.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Fonts.SIZE_SMALL}pt;")
         form_layout.addWidget(self._remember_check)
@@ -218,6 +237,7 @@ class FidelityLoginDialog(QDialog):
         self._login_error = QLabel("")
         self._login_error.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
         self._login_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._login_error.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._login_error.hide()
         form_layout.addWidget(self._login_error)
 
@@ -232,6 +252,7 @@ class FidelityLoginDialog(QDialog):
         info = QLabel("A verification code was sent to your phone.\nEnter it below to complete login.")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(info)
 
         self._twofa_input = QLineEdit()
@@ -250,6 +271,7 @@ class FidelityLoginDialog(QDialog):
         self._twofa_error = QLabel("")
         self._twofa_error.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
         self._twofa_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._twofa_error.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._twofa_error.hide()
         layout.addWidget(self._twofa_error)
 
@@ -265,6 +287,7 @@ class FidelityLoginDialog(QDialog):
         self._progress_label = QLabel("Connecting to Fidelity...")
         self._progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_label.setFont(QFont(Fonts.SANS, Fonts.SIZE_NORMAL))
+        self._progress_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
@@ -288,11 +311,14 @@ class FidelityLoginDialog(QDialog):
         self._result_label = QLabel()
         self._result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_label.setFont(QFont(Fonts.SANS, Fonts.SIZE_LARGE))
+        self._result_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self._result_label)
 
         self._result_detail = QLabel()
         self._result_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._result_detail.setWordWrap(True)
         self._result_detail.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self._result_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self._result_detail)
 
         self._done_btn = QPushButton("Done")
@@ -305,6 +331,14 @@ class FidelityLoginDialog(QDialog):
         self._stack.addWidget(page)
 
     # ── Actions ──────────────────────────────────────────────────────
+    def _on_import_csv(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Fidelity Positions CSV",
+            "", "CSV Files (*.csv);;All Files (*)",
+        )
+        if path:
+            self.csv_imported.emit(path)
+
     def _on_login(self):
         username = self._username_input.text().strip()
         password = self._password_input.text().strip()

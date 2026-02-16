@@ -125,8 +125,8 @@ class FidelityAutoImporter:
         """Open a visible browser and let the user log in manually.
 
         Opens Firefox to Fidelity's login page. The user handles credentials
-        and 2FA themselves. We wait until the browser reaches the portfolio
-        summary page (up to timeout_sec seconds).
+        and 2FA themselves. We poll until the browser leaves the login page,
+        then navigate to the positions page ourselves.
 
         Returns True if the user successfully logged in.
         """
@@ -138,13 +138,38 @@ class FidelityAutoImporter:
             )
             logger.info("Interactive login: browser opened, waiting for user to log in...")
 
-            # Wait for the user to reach the portfolio summary page
-            self._fidelity.page.wait_for_url(
-                "**/digital/portfolio/summary",
-                timeout=timeout_sec * 1000,
+            # Poll until the user leaves the login page.
+            # After successful login, Fidelity may redirect to:
+            #   - /ftgw/digital/portfolio/summary
+            #   - www.fidelity.com (homepage)
+            #   - /ftgw/digital/portfolio/positions
+            #   - or other authenticated pages
+            # We detect success by checking the URL is no longer the login page.
+            import time
+            deadline = time.monotonic() + timeout_sec
+            while time.monotonic() < deadline:
+                url = self._fidelity.page.url
+                # Still on login page — keep waiting
+                if "login" in url and "digital.fidelity.com" in url:
+                    self._fidelity.page.wait_for_timeout(1000)
+                    continue
+                # Left the login page — login succeeded
+                logger.info("Interactive login: detected post-login URL: %s", url)
+                break
+            else:
+                raise TimeoutError(
+                    f"Login was not completed within {timeout_sec} seconds. "
+                    "Close the browser and try again."
+                )
+
+            # Now navigate to the positions page so getAccountInfo() works
+            logger.info("Interactive login: navigating to portfolio positions page...")
+            self._fidelity.page.goto(
+                "https://digital.fidelity.com/ftgw/digital/portfolio/positions",
+                timeout=60000,
             )
             self._logged_in = True
-            logger.info("Interactive login: user reached portfolio page")
+            logger.info("Interactive login: success — ready to fetch positions")
             return True
         except PlaywrightNotInstalledError:
             raise

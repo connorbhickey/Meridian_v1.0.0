@@ -34,6 +34,10 @@ playwright_state/
 Thumbs.db
 .DS_Store
 
+# Node / Electron
+node_modules/
+package-lock.json
+
 # Logs
 *.log
 

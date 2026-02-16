@@ -466,6 +466,7 @@ class MainWindow(QMainWindow):
         self._fid_dialog = FidelityLoginDialog(self, show_playwright_setup=show_playwright_setup)
         self._fid_dialog.login_requested.connect(self._on_fidelity_login)
         self._fid_dialog.interactive_login_requested.connect(self._on_fidelity_browser_login)
+        self._fid_dialog.csv_imported.connect(self._on_fidelity_csv_imported)
         self._fid_dialog.twofa_submitted.connect(self._on_fidelity_2fa)
         self._fid_dialog.skip_requested.connect(
             lambda: self.console_panel.log_info("Fidelity connection skipped")
@@ -495,6 +496,35 @@ class MainWindow(QMainWindow):
     def _on_fidelity_browser_login(self):
         self.set_fidelity_status(None)  # amber = connecting
         self.fidelity_controller.login_interactive()
+
+    def _on_fidelity_csv_imported(self, path: str):
+        """Handle CSV file imported from the Fidelity dialog."""
+        try:
+            portfolio = parse_fidelity_csv(path)
+            self._portfolio = portfolio
+            self.portfolio_panel.set_portfolio(portfolio)
+            self.set_fidelity_status(True)
+            self.console_panel.log_success(
+                f"Imported Fidelity CSV: {len(portfolio.holdings)} positions, "
+                f"${portfolio.total_value:,.2f} total value"
+            )
+            # Update ticker bar with top holdings
+            items = []
+            for h in portfolio.holdings[:20]:
+                items.append({
+                    "symbol": h.asset.symbol,
+                    "price": h.current_price,
+                    "change_pct": h.unrealized_pnl_pct if h.cost_basis else 0.0,
+                })
+            if items:
+                self.ticker_bar.set_items(items)
+            # Close dialog on success
+            if hasattr(self, '_fid_dialog') and self._fid_dialog.isVisible():
+                self._fid_dialog.show_success(f"{len(portfolio.holdings)} positions loaded from CSV")
+        except Exception as e:
+            self.console_panel.log_error(f"Fidelity CSV import failed: {e}")
+            if hasattr(self, '_fid_dialog') and self._fid_dialog.isVisible():
+                self._fid_dialog.show_error(f"CSV import failed: {e}")
 
     def _on_fidelity_2fa(self, code: str):
         self.fidelity_controller.submit_2fa(code)
