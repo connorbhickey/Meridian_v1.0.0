@@ -4,45 +4,84 @@ from enum import Enum, auto
 
 
 # ── Application ──────────────────────────────────────────────────────
-APP_NAME = "PortOpt"
-APP_VERSION = "0.1.0"
-APP_ORG = "PortOpt"
+APP_NAME = "Meridian"
+APP_VERSION = "1.0.0"
+APP_ORG = "Meridian"
 MAX_ASSETS = 100
 
-# ── Colors (Trading Terminal Palette) ────────────────────────────────
+# ── Colors (Deep Space Palette) ──────────────────────────────────────
 class Colors:
-    BG_PRIMARY = "#0d1117"       # Main background
-    BG_SECONDARY = "#161b22"     # Panel backgrounds
-    BG_TERTIARY = "#1c2128"      # Elevated surfaces
-    BG_INPUT = "#21262d"         # Input fields
+    # Backgrounds (Deep Space)
+    BG_PRIMARY = "#0a0e14"       # Deepest layer
+    BG_SECONDARY = "#0d1117"     # Panel backgrounds
+    BG_TERTIARY = "#161b22"      # Elevated surfaces
+    BG_INPUT = "#1c2333"         # Input fields
+    BG_ELEVATED = "#21283b"      # Hover states
+
+    # Borders
     BORDER = "#30363d"           # Panel borders
-    BORDER_LIGHT = "#3a424b"     # Subtle separators
+    BORDER_LIGHT = "#484f58"     # Active borders, focus rings
 
-    TEXT_PRIMARY = "#e6edf3"     # Main text
-    TEXT_SECONDARY = "#8b949e"   # Muted text
-    TEXT_MUTED = "#6e7681"       # Dimmed text
+    # Text hierarchy
+    TEXT_PRIMARY = "#f0f6fc"     # Headings, values
+    TEXT_SECONDARY = "#e6edf3"   # Labels
+    TEXT_MUTED = "#8b949e"       # Descriptions
+    TEXT_DISABLED = "#6e7681"    # Disabled text
 
-    ACCENT = "#00d4ff"           # Cyan accent (selections, highlights)
-    ACCENT_DIM = "#0a3d5c"       # Accent background
+    # Accent (Arctic Cyan)
+    ACCENT = "#00d4ff"           # Primary accent
+    ACCENT_HOVER = "#39ddff"     # Hover states
+    ACCENT_LIGHT = "#79e8ff"     # Light accent for charts
+    ACCENT_DIM = "#0a3d5c"      # Accent backgrounds
+    ACCENT_GLOW = "rgba(0,212,255,0.08)"  # Subtle glow
 
+    # Semantic
     PROFIT = "#00ff88"           # Green (gains)
-    PROFIT_DIM = "#0d3321"       # Green background
-    LOSS = "#ff4444"             # Red (losses)
-    LOSS_DIM = "#3d1111"         # Red background
-
+    PROFIT_DIM = "#0a3d2a"      # Green background
+    LOSS = "#ff4757"             # Red (losses)
+    LOSS_DIM = "#3d0a15"        # Red background
     WARNING = "#f0b429"          # Amber warnings
+    WARNING_DIM = "#3d2e0a"     # Warning background
+
+    # Extended palette
+    PURPLE = "#a855f7"
+    PINK = "#ec4899"
     GRID = "#2a2a3e"             # Chart grid lines
 
     # Heatmap gradient
-    HEATMAP_NEG = "#ff4444"
-    HEATMAP_ZERO = "#1c2128"
+    HEATMAP_NEG = "#ff4757"
+    HEATMAP_ZERO = "#0d1117"     # Aligned to BG_SECONDARY
     HEATMAP_POS = "#00ff88"
+
+    # Centralized chart palette (10 colors for multi-series data)
+    CHART_PALETTE = [
+        "#00d4ff", "#00ff88", "#f0b429", "#a855f7", "#ec4899",
+        "#06b6d4", "#f97316", "#84cc16", "#6366f1", "#f43f5e",
+    ]
+
+    # Sector colors for network graph
+    SECTOR_COLORS = {
+        "Technology": "#00d4ff",
+        "Healthcare": "#00ff88",
+        "Financials": "#f0b429",
+        "Consumer Discretionary": "#ec4899",
+        "Consumer Staples": "#84cc16",
+        "Industrials": "#6366f1",
+        "Energy": "#ff4757",
+        "Materials": "#f97316",
+        "Utilities": "#06b6d4",
+        "Real Estate": "#a855f7",
+        "Communication Services": "#d946ef",
+        "Other": "#8b949e",
+    }
 
 
 # ── Fonts ────────────────────────────────────────────────────────────
 class Fonts:
-    MONO = "Consolas"            # Monospace for numbers/data
-    SANS = "Segoe UI"            # Sans-serif for labels
+    MONO = "JetBrains Mono"      # Primary monospace
+    MONO_FALLBACK = "Consolas"   # Windows fallback
+    SANS = "Inter"               # Primary sans-serif
+    SANS_FALLBACK = "Segoe UI"  # Windows fallback
     SIZE_SMALL = 9
     SIZE_NORMAL = 10
     SIZE_LARGE = 12

@@ -8,10 +8,6 @@ import numpy as np
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
 
-PALETTE = [
-    "#00d4ff", "#00ff88", "#ff4444", "#f0b429", "#a855f7",
-    "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
-]
 
 
 class FrontierPanel(BasePanel):
@@ -69,7 +65,7 @@ class FrontierPanel(BasePanel):
     def set_individual_assets(self, symbols: list[str], risks: np.ndarray, returns: np.ndarray):
         """Plot individual asset positions as scatter dots."""
         for i, sym in enumerate(symbols):
-            color = PALETTE[i % len(PALETTE)]
+            color = Colors.CHART_PALETTE[i % len(Colors.CHART_PALETTE)]
             scatter = pg.ScatterPlotItem(
                 [risks[i] * 100], [returns[i] * 100],
                 pen=pg.mkPen(color, width=1),
@@ -84,7 +80,7 @@ class FrontierPanel(BasePanel):
         """Plot the optimal portfolio as a star marker."""
         scatter = pg.ScatterPlotItem(
             [risk * 100], [ret * 100],
-            pen=pg.mkPen("#ffffff", width=2),
+            pen=pg.mkPen(Colors.TEXT_PRIMARY, width=2),
             brush=pg.mkBrush(Colors.WARNING),
             size=16,
             symbol="star",

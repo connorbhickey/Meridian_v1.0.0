@@ -8,7 +8,7 @@ import keyring
 
 logger = logging.getLogger(__name__)
 
-SERVICE_NAME = "PortOpt"
+SERVICE_NAME = "Meridian"
 
 
 def store_credential(key: str, value: str):

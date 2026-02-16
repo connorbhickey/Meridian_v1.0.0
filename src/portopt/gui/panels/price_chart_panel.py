@@ -11,11 +11,6 @@ import numpy as np
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
 
-# 10-color palette for multi-asset lines
-PALETTE = [
-    "#00d4ff", "#00ff88", "#ff4444", "#f0b429", "#a855f7",
-    "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
-]
 
 
 class PriceChartPanel(BasePanel):
@@ -155,7 +150,7 @@ class PriceChartPanel(BasePanel):
         normalized = self._mode_combo.currentIndex() == 1
 
         for i, (symbol, (epochs, vals)) in enumerate(self._prices.items()):
-            color = PALETTE[i % len(PALETTE)]
+            color = Colors.CHART_PALETTE[i % len(Colors.CHART_PALETTE)]
             display_vals = vals.copy()
 
             if normalized and len(display_vals) > 0 and display_vals[0] != 0:

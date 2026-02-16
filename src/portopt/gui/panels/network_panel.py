@@ -8,23 +8,6 @@ import numpy as np
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
 
-# Sector color mapping
-SECTOR_COLORS = {
-    "Technology": "#00d4ff",
-    "Healthcare": "#00ff88",
-    "Financials": "#f0b429",
-    "Consumer Discretionary": "#ec4899",
-    "Consumer Staples": "#84cc16",
-    "Industrials": "#6366f1",
-    "Energy": "#ff4444",
-    "Materials": "#f97316",
-    "Utilities": "#06b6d4",
-    "Real Estate": "#a855f7",
-    "Communication Services": "#d946ef",
-    "Other": "#8b949e",
-}
-
-DEFAULT_COLOR = "#8b949e"
 
 
 class NetworkPanel(BasePanel):
@@ -176,7 +159,7 @@ class NetworkPanel(BasePanel):
             ys.append(y)
 
             sector = self._sectors.get(node, "Other")
-            colors.append(pg.mkBrush(SECTOR_COLORS.get(sector, DEFAULT_COLOR)))
+            colors.append(pg.mkBrush(Colors.SECTOR_COLORS.get(sector, Colors.TEXT_MUTED)))
 
             cap = self._market_caps.get(node, max_cap * 0.5)
             size = 8 + 12 * (cap / max_cap) if max_cap > 0 else 12
@@ -188,7 +171,7 @@ class NetworkPanel(BasePanel):
             xs, ys,
             size=sizes,
             brush=colors,
-            pen=pg.mkPen("#ffffff", width=1),
+            pen=pg.mkPen(Colors.TEXT_PRIMARY, width=1),
             symbol="o",
         )
         self._plot_widget.addItem(scatter)

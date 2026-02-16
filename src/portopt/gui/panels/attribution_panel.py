@@ -8,10 +8,6 @@ import numpy as np
 from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
 
-PALETTE = [
-    "#00d4ff", "#00ff88", "#ff4444", "#f0b429", "#a855f7",
-    "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
-]
 
 
 class AttributionPanel(BasePanel):
@@ -183,7 +179,7 @@ class AttributionPanel(BasePanel):
         x = np.arange(n)
 
         colors = [
-            PALETTE[i % len(PALETTE)] for i in range(n)
+            Colors.CHART_PALETTE[i % len(Colors.CHART_PALETTE)] for i in range(n)
         ]
         bars = pg.BarGraphItem(
             x=x, height=[v * 100 for v in values], width=0.6,

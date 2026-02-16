@@ -1,4 +1,4 @@
-"""Dark trading terminal theme — Bloomberg/Citadel aesthetic.
+"""Meridian deep-space trading terminal theme.
 
 Layered on top of qdarkstyle as a base, with custom QSS overrides
 for dense information display, monospace data fonts, and P&L coloring.
@@ -14,14 +14,14 @@ QMainWindow {{
 
 QWidget {{
     color: {Colors.TEXT_PRIMARY};
-    font-family: "{Fonts.SANS}";
+    font-family: "{Fonts.SANS}", "{Fonts.SANS_FALLBACK}", sans-serif;
     font-size: {Fonts.SIZE_NORMAL}pt;
 }}
 
 /* ── Dock Widgets (Panels) ───────────────────────────────────────── */
 QDockWidget {{
     color: {Colors.TEXT_PRIMARY};
-    font-family: "{Fonts.SANS}";
+    font-family: "{Fonts.SANS}", "{Fonts.SANS_FALLBACK}", sans-serif;
     font-size: {Fonts.SIZE_NORMAL}pt;
     titlebar-close-icon: none;
     titlebar-normal-icon: none;
@@ -80,7 +80,7 @@ QTableWidget, QTableView, QTreeView {{
     alternate-background-color: {Colors.BG_SECONDARY};
     gridline-color: {Colors.BORDER};
     border: 1px solid {Colors.BORDER};
-    font-family: "{Fonts.MONO}";
+    font-family: "{Fonts.MONO}", "{Fonts.MONO_FALLBACK}", monospace;
     font-size: {Fonts.SIZE_SMALL}pt;
     selection-background-color: {Colors.ACCENT_DIM};
     selection-color: {Colors.TEXT_PRIMARY};
@@ -91,7 +91,7 @@ QHeaderView::section {{
     color: {Colors.TEXT_SECONDARY};
     border: 1px solid {Colors.BORDER};
     padding: 3px 6px;
-    font-family: "{Fonts.SANS}";
+    font-family: "{Fonts.SANS}", "{Fonts.SANS_FALLBACK}", sans-serif;
     font-size: {Fonts.SIZE_SMALL}pt;
     font-weight: bold;
 }}
@@ -103,7 +103,7 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit {{
     border-radius: 2px;
     padding: 3px 6px;
     color: {Colors.TEXT_PRIMARY};
-    font-family: "{Fonts.MONO}";
+    font-family: "{Fonts.MONO}", "{Fonts.MONO_FALLBACK}", monospace;
     font-size: {Fonts.SIZE_NORMAL}pt;
     selection-background-color: {Colors.ACCENT_DIM};
 }}
@@ -145,9 +145,9 @@ QPushButton {{
 }}
 
 QPushButton:hover {{
-    background-color: {Colors.ACCENT_DIM};
-    border-color: {Colors.ACCENT};
-    color: {Colors.ACCENT};
+    background-color: {Colors.BG_ELEVATED};
+    border-color: {Colors.ACCENT_HOVER};
+    color: {Colors.ACCENT_HOVER};
 }}
 
 QPushButton:pressed {{
@@ -167,7 +167,7 @@ QPushButton[primary="true"] {{
 }}
 
 QPushButton[primary="true"]:hover {{
-    background-color: {Colors.ACCENT};
+    background-color: {Colors.ACCENT_HOVER};
     color: {Colors.BG_PRIMARY};
 }}
 
@@ -230,7 +230,7 @@ QStatusBar {{
     background-color: {Colors.BG_SECONDARY};
     border-top: 1px solid {Colors.BORDER};
     color: {Colors.TEXT_SECONDARY};
-    font-family: "{Fonts.MONO}";
+    font-family: "{Fonts.MONO}", "{Fonts.MONO_FALLBACK}", monospace;
     font-size: {Fonts.SIZE_SMALL}pt;
 }}
 
@@ -269,7 +269,7 @@ QToolTip {{
     border: 1px solid {Colors.ACCENT};
     color: {Colors.TEXT_PRIMARY};
     padding: 4px 6px;
-    font-family: "{Fonts.SANS}";
+    font-family: "{Fonts.SANS}", "{Fonts.SANS_FALLBACK}", sans-serif;
     font-size: {Fonts.SIZE_SMALL}pt;
 }}
 
@@ -308,7 +308,7 @@ QProgressBar::chunk {{
 
 /* ── Labels (data-value styling) ─────────────────────────────────── */
 QLabel[dataValue="true"] {{
-    font-family: "{Fonts.MONO}";
+    font-family: "{Fonts.MONO}", "{Fonts.MONO_FALLBACK}", monospace;
     font-size: {Fonts.SIZE_NORMAL}pt;
 }}
 

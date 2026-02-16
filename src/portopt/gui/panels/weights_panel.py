@@ -12,11 +12,6 @@ from portopt.gui.panels.base_panel import BasePanel
 from portopt.constants import Colors, Fonts
 from portopt.gui.widgets.table_context_menu import setup_table_context_menu
 
-PALETTE = [
-    "#00d4ff", "#00ff88", "#ff4444", "#f0b429", "#a855f7",
-    "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
-]
-
 
 class WeightsPanel(BasePanel):
     panel_id = "weights"

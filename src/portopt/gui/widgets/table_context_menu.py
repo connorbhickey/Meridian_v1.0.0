@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QApplication, QFileDialog, QMenu, QTableWidget,
 )
 
+from portopt.constants import Colors
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,16 +43,16 @@ def _show_menu(
     extra_actions: list[tuple[str, callable]],
 ):
     menu = QMenu(table)
-    menu.setStyleSheet("""
-        QMenu {
-            background: #161b22;
-            color: #e6edf3;
-            border: 1px solid #30363d;
+    menu.setStyleSheet(f"""
+        QMenu {{
+            background: {Colors.BG_TERTIARY};
+            color: {Colors.TEXT_SECONDARY};
+            border: 1px solid {Colors.BORDER};
             padding: 4px;
-        }
-        QMenu::item:selected {
-            background: #0a3d5c;
-        }
+        }}
+        QMenu::item:selected {{
+            background: {Colors.ACCENT_DIM};
+        }}
     """)
 
     # Copy Cell

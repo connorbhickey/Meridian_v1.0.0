@@ -1,4 +1,4 @@
-"""Application entry point — launches the trading terminal."""
+"""Application entry point — launches the Meridian terminal."""
 
 import sys
 
@@ -19,7 +19,7 @@ def main():
     font = QFont(Fonts.SANS, Fonts.SIZE_NORMAL)
     app.setFont(font)
 
-    # Apply dark trading terminal theme
+    # Apply Meridian deep-space theme
     apply_theme(app)
 
     # Launch main window

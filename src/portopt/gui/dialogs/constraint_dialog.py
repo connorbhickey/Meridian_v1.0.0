@@ -127,13 +127,13 @@ class ConstraintDialog(QDialog):
         apply_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.ACCENT};
-                color: #000000;
+                color: {Colors.BG_PRIMARY};
                 font-weight: bold;
                 border: none;
                 border-radius: 3px;
                 padding: 6px 12px;
             }}
-            QPushButton:hover {{ background: #33ddff; }}
+            QPushButton:hover {{ background: {Colors.ACCENT_HOVER}; }}
         """)
         apply_btn.clicked.connect(self._submit)
         btn_row.addWidget(apply_btn)

@@ -21,9 +21,9 @@ def get_settings() -> QSettings:
 
 def get_data_dir() -> Path:
     """Return the local data directory for caches, state, etc."""
-    base = Path(os.environ.get("PORTOPT_DATA_DIR", ""))
+    base = Path(os.environ.get("MERIDIAN_DATA_DIR", ""))
     if not base.is_absolute():
-        base = Path.home() / ".portopt"
+        base = Path.home() / ".meridian"
     base.mkdir(parents=True, exist_ok=True)
     return base
 

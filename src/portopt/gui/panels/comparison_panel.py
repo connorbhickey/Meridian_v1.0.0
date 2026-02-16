@@ -23,15 +23,6 @@ from portopt.gui.panels.base_panel import BasePanel
 
 MAX_SNAPSHOTS = 5
 
-# Palette for strategy bars
-STRATEGY_COLORS = [
-    "#00d4ff",  # cyan
-    "#00ff88",  # green
-    "#f0b429",  # amber
-    "#a855f7",  # purple
-    "#ec4899",  # pink
-]
-
 METRIC_KEYS = [
     ("expected_return", "Expected Return", "{:.2%}"),
     ("volatility", "Volatility", "{:.2%}"),
@@ -192,7 +183,7 @@ class ComparisonPanel(BasePanel):
             weights = [result.weights.get(sym, 0.0) * 100 for sym in all_symbols]
             x_pos = x_base + i * bar_width - (n_strategies - 1) * bar_width / 2
 
-            color = STRATEGY_COLORS[i % len(STRATEGY_COLORS)]
+            color = Colors.CHART_PALETTE[i % len(Colors.CHART_PALETTE)]
             bar = pg.BarGraphItem(
                 x=x_pos, height=weights, width=bar_width * 0.9,
                 brush=pg.mkBrush(color),
@@ -224,7 +215,7 @@ class ComparisonPanel(BasePanel):
 
         for col, label in enumerate(strategies):
             result = self._snapshots[label]
-            color = STRATEGY_COLORS[col % len(STRATEGY_COLORS)]
+            color = Colors.CHART_PALETTE[col % len(Colors.CHART_PALETTE)]
 
             for row, (attr, _display_name, fmt) in enumerate(METRIC_KEYS):
                 value = getattr(result, attr, None)

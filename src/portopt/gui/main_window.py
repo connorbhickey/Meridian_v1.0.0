@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — Portfolio Terminal")
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — Quantitative Portfolio Terminal")
         self.setMinimumSize(QSize(1280, 800))
         self.resize(1600, 1000)
 
@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
     # ── Startup ──────────────────────────────────────────────────────
     def _on_startup(self):
         """Called shortly after window shows — attempt Fidelity auto-connect."""
-        self.console_panel.log_info("PortOpt terminal started")
+        self.console_panel.log_info(f"{APP_NAME} terminal started")
         cache_mb = self.data_controller.get_cache_size()
         self.set_cache_status(f"CACHE: {cache_mb:.1f} MB")
 
@@ -615,7 +615,8 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         QMessageBox.about(
             self, f"About {APP_NAME}",
-            f"<b>{APP_NAME} v{APP_VERSION}</b><br><br>"
+            f"<b>{APP_NAME} v{APP_VERSION}</b><br>"
+            f"<i>Quantitative Portfolio Terminal</i><br><br>"
             f"Professional portfolio optimization and backtesting terminal.<br>"
             f"Implements all methods from Hudson & Thames guide.<br><br>"
             f"<b>Shortcuts:</b><br>"

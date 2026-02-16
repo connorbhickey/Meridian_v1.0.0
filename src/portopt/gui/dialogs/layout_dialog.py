@@ -46,7 +46,7 @@ class LayoutDialog(QDialog):
         save_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.ACCENT};
-                color: #000000;
+                color: {Colors.BG_PRIMARY};
                 font-weight: bold;
                 border: none;
                 border-radius: 3px;
