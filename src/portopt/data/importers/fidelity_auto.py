@@ -18,7 +18,12 @@ from portopt.data.models import (
 
 logger = logging.getLogger(__name__)
 
-STATE_FILE = "fidelity_state.json"
+# The fidelity-api library stores its state as "Fidelity.json" inside the profile dir
+_LIBRARY_STATE_FILE = "Fidelity.json"
+
+
+class PlaywrightNotInstalledError(RuntimeError):
+    """Raised when Playwright Firefox is not installed."""
 
 
 class FidelityAutoImporter:
@@ -31,22 +36,38 @@ class FidelityAutoImporter:
     def __init__(self, state_dir: Path | None = None):
         self._state_dir = state_dir or get_fidelity_state_dir()
         self._state_dir.mkdir(parents=True, exist_ok=True)
-        self._state_path = self._state_dir / STATE_FILE
         self._fidelity = None
         self._logged_in = False
 
     @property
     def has_saved_session(self) -> bool:
-        """Check if a saved browser session exists."""
-        return self._state_path.exists()
+        """Check if a saved browser session exists.
+
+        The fidelity-api library stores its state as Fidelity.json inside the profile dir.
+        """
+        return (self._state_dir / _LIBRARY_STATE_FILE).exists()
+
+    def _check_playwright(self):
+        """Verify Playwright Firefox is available before launching a browser."""
+        from portopt.utils.playwright_check import is_playwright_firefox_installed
+        if not is_playwright_firefox_installed():
+            raise PlaywrightNotInstalledError(
+                "Playwright Firefox is not installed. "
+                "Run 'python -m playwright install firefox' or use the setup wizard."
+            )
 
     def _create_automation(self):
-        """Create a new FidelityAutomation instance with persistent profile."""
+        """Create a new FidelityAutomation instance with persistent profile.
+
+        Bug fix: profile_path must be a DIRECTORY — the library appends
+        'Fidelity.json' to it internally.
+        """
+        self._check_playwright()
         from fidelity.fidelity import FidelityAutomation
         self._fidelity = FidelityAutomation(
             headless=True,
             save_state=True,
-            profile_path=str(self._state_path),
+            profile_path=str(self._state_dir),
         )
 
     def login(self, username: str, password: str, totp_secret: str | None = None) -> tuple[bool, bool]:
@@ -56,23 +77,37 @@ class FidelityAutoImporter:
             - (True, False): Login complete, no 2FA needed
             - (True, True): Login started, call complete_2fa() with the code
             - (False, False): Login failed
+
+        Note: The fidelity-api library returns inverted semantics:
+            - (True, True) = fully logged in (success, no 2FA needed)
+            - (True, False) = needs 2FA
+            - (False, False) = failed
+        We map those to Meridian's convention above.
         """
         try:
             self._create_automation()
-            success, needs_2fa = self._fidelity.login(
+            lib_success, lib_logged_in = self._fidelity.login(
                 username=username,
                 password=password,
                 totp_secret=totp_secret,
                 save_device=True,
             )
-            if success and not needs_2fa:
+
+            if lib_success and lib_logged_in:
+                # Library: (True, True) = fully logged in → Meridian: (True, False)
                 self._logged_in = True
                 logger.info("Fidelity login successful (no 2FA needed)")
-            elif success and needs_2fa:
+                return True, False
+            elif lib_success and not lib_logged_in:
+                # Library: (True, False) = needs 2FA → Meridian: (True, True)
                 logger.info("Fidelity login requires 2FA code")
+                return True, True
             else:
+                # Library: (False, False) = failed → Meridian: (False, False)
                 logger.warning("Fidelity login failed")
-            return success, needs_2fa
+                return False, False
+        except PlaywrightNotInstalledError:
+            raise
         except Exception as e:
             logger.error("Fidelity login error: %s", e)
             return False, False
@@ -106,11 +141,17 @@ class FidelityAutoImporter:
             return False
         try:
             self._create_automation()
-            # Try to fetch account info — will fail if session expired
-            self._fidelity.getAccountInfo()
+            # getAccountInfo() returns None when session is expired
+            result = self._fidelity.getAccountInfo()
+            if result is None:
+                logger.warning("Saved Fidelity session expired (getAccountInfo returned None)")
+                self._logged_in = False
+                return False
             self._logged_in = True
             logger.info("Fidelity connected with saved session")
             return True
+        except PlaywrightNotInstalledError:
+            raise
         except Exception as e:
             logger.warning("Saved Fidelity session expired or invalid: %s", e)
             self._logged_in = False
@@ -230,7 +271,8 @@ class FidelityAutoImporter:
         return self._logged_in and self._fidelity is not None
 
     def clear_saved_session(self):
-        """Delete the saved session file."""
-        if self._state_path.exists():
-            self._state_path.unlink()
+        """Delete the saved session file (Fidelity.json created by the library)."""
+        state_file = self._state_dir / _LIBRARY_STATE_FILE
+        if state_file.exists():
+            state_file.unlink()
             logger.info("Fidelity saved session cleared")

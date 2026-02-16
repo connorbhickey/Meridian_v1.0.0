@@ -3,7 +3,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
+    QComboBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -24,6 +24,7 @@ class PortfolioPanel(BasePanel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._portfolio = None  # stored for filtering
 
         # Header bar
         header = QWidget()
@@ -48,6 +49,25 @@ class PortfolioPanel(BasePanel):
 
         self._layout.addWidget(header)
 
+        # Account filter dropdown
+        filter_row = QWidget()
+        filter_layout = QHBoxLayout(filter_row)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(6)
+
+        filter_label = QLabel("Account:")
+        filter_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt;")
+        filter_layout.addWidget(filter_label)
+
+        self._account_filter = QComboBox()
+        self._account_filter.addItem("All Accounts")
+        self._account_filter.setFixedHeight(22)
+        self._account_filter.currentTextChanged.connect(self._on_account_filter_changed)
+        filter_layout.addWidget(self._account_filter)
+
+        filter_layout.addStretch()
+        self._layout.addWidget(filter_row)
+
         # Positions table
         self._table = QTableWidget()
         self._table.setColumnCount(len(self._COLUMNS))
@@ -62,6 +82,14 @@ class PortfolioPanel(BasePanel):
         self._table.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
         setup_table_context_menu(self._table)
         self._layout.addWidget(self._table)
+
+        # Sector summary label
+        self._sector_label = QLabel("")
+        self._sector_label.setStyleSheet(
+            f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt; padding: 2px 0;"
+        )
+        self._sector_label.setWordWrap(True)
+        self._layout.addWidget(self._sector_label)
 
         # Bottom bar
         bottom = QWidget()
@@ -88,11 +116,44 @@ class PortfolioPanel(BasePanel):
         self._layout.addWidget(bottom)
 
     def set_portfolio(self, portfolio: Portfolio):
-        """Populate the table with portfolio holdings."""
-        self._table.setRowCount(len(portfolio.holdings))
-        total_value = portfolio.total_value
+        """Store the portfolio and populate the table."""
+        self._portfolio = portfolio
 
-        for row, holding in enumerate(portfolio.holdings):
+        # Update account filter dropdown
+        self._account_filter.blockSignals(True)
+        current_filter = self._account_filter.currentText()
+        self._account_filter.clear()
+        self._account_filter.addItem("All Accounts")
+        account_names = sorted({h.account for h in portfolio.holdings if h.account})
+        for name in account_names:
+            self._account_filter.addItem(name)
+        # Restore previous selection if still valid
+        idx = self._account_filter.findText(current_filter)
+        self._account_filter.setCurrentIndex(idx if idx >= 0 else 0)
+        self._account_filter.blockSignals(False)
+
+        self._display_holdings()
+
+    def _on_account_filter_changed(self, text: str):
+        """Re-display holdings filtered by account."""
+        if self._portfolio:
+            self._display_holdings()
+
+    def _display_holdings(self):
+        """Populate the table with holdings, applying the current account filter."""
+        if not self._portfolio:
+            return
+
+        account_filter = self._account_filter.currentText()
+        if account_filter == "All Accounts":
+            holdings = self._portfolio.holdings
+        else:
+            holdings = [h for h in self._portfolio.holdings if h.account == account_filter]
+
+        self._table.setRowCount(len(holdings))
+        total_value = self._portfolio.total_value  # always use full portfolio total for weights
+
+        for row, holding in enumerate(holdings):
             self._set_cell(row, 0, holding.asset.symbol, align=Qt.AlignmentFlag.AlignLeft)
             self._set_cell(row, 1, f"{holding.quantity:,.2f}")
             self._set_cell(row, 2, f"${holding.current_price:,.2f}")
@@ -114,21 +175,42 @@ class PortfolioPanel(BasePanel):
             # Account
             self._set_cell(row, 8, holding.account, align=Qt.AlignmentFlag.AlignLeft)
 
-        # Update summary
+        # Update summary (always show full portfolio summary)
         self._total_label.setText(f"${total_value:,.2f}")
-        total_pnl = portfolio.total_pnl
+        total_pnl = self._portfolio.total_pnl
         sign = "+" if total_pnl >= 0 else ""
         color = Colors.PROFIT if total_pnl >= 0 else Colors.LOSS
-        self._pnl_label.setText(f"{sign}${total_pnl:,.2f} ({sign}{portfolio.total_pnl_pct:.2f}%)")
+        self._pnl_label.setText(f"{sign}${total_pnl:,.2f} ({sign}{self._portfolio.total_pnl_pct:.2f}%)")
         self._pnl_label.setStyleSheet(f"color: {color};")
 
-        n_accts = len(portfolio.accounts)
+        n_accts = len(self._portfolio.accounts)
+        filtered = f" ({len(holdings)} shown)" if account_filter != "All Accounts" else ""
         self._status_label.setText(
-            f"{len(portfolio.holdings)} positions across {n_accts} account{'s' if n_accts != 1 else ''}"
+            f"{len(self._portfolio.holdings)} positions across {n_accts} account{'s' if n_accts != 1 else ''}{filtered}"
         )
+
+        # Sector summary
+        self._update_sector_summary(holdings)
 
         # Auto-resize columns
         self._table.resizeColumnsToContents()
+
+    def _update_sector_summary(self, holdings: list[Holding]):
+        """Show top sectors by weight below the table."""
+        sector_weight: dict[str, float] = {}
+        total_val = sum(h.market_value for h in holdings)
+        if total_val <= 0:
+            self._sector_label.setText("")
+            return
+
+        for h in holdings:
+            sector = h.asset.sector or "Unknown"
+            sector_weight[sector] = sector_weight.get(sector, 0) + h.market_value
+
+        # Sort by weight descending, show top 5
+        top = sorted(sector_weight.items(), key=lambda x: x[1], reverse=True)[:5]
+        parts = [f"{name}: {val / total_val * 100:.1f}%" for name, val in top]
+        self._sector_label.setText("Sectors: " + " | ".join(parts))
 
     def _set_cell(self, row: int, col: int, text: str,
                   color: str = None, align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignRight):

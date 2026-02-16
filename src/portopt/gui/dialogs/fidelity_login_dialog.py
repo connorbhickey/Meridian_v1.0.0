@@ -1,4 +1,4 @@
-"""First-run Fidelity login dialog with 2FA support."""
+"""First-run Fidelity login dialog with 2FA support and Playwright setup."""
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -9,20 +9,31 @@ from PySide6.QtWidgets import (
 )
 
 from portopt.constants import Colors, Fonts
+from portopt.utils.threading import run_in_thread
+
+
+# Named page constants for stack navigation
+class _Page:
+    PLAYWRIGHT_SETUP = 0
+    CREDENTIALS = 1
+    TWOFA = 2
+    PROGRESS = 3
+    RESULT = 4
 
 
 class FidelityLoginDialog(QDialog):
-    """Multi-step Fidelity login dialog: credentials -> 2FA -> done."""
+    """Multi-step Fidelity login dialog: [playwright setup] -> credentials -> 2FA -> done."""
 
     login_requested = Signal(str, str, str)  # username, password, totp_secret
     twofa_submitted = Signal(str)            # code
     skip_requested = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_playwright_setup: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Connect to Fidelity")
-        self.setFixedSize(440, 380)
+        self.setFixedSize(440, 420)
         self.setModal(True)
+        self._worker = None  # prevent GC of install worker
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
@@ -44,6 +55,7 @@ class FidelityLoginDialog(QDialog):
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
 
+        self._setup_playwright_page()
         self._setup_login_page()
         self._setup_2fa_page()
         self._setup_progress_page()
@@ -58,8 +70,83 @@ class FidelityLoginDialog(QDialog):
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
+        # Start on playwright setup or credentials page
+        if show_playwright_setup:
+            self._stack.setCurrentIndex(_Page.PLAYWRIGHT_SETUP)
+        else:
+            self._stack.setCurrentIndex(_Page.CREDENTIALS)
+
+    def _setup_playwright_page(self):
+        """Page 0: Playwright Firefox setup (shown when browser is missing)."""
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 16, 0, 0)
+
+        info = QLabel(
+            "Fidelity connection requires a browser engine.\n"
+            "Playwright Firefox needs to be installed (one-time setup)."
+        )
+        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info.setWordWrap(True)
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        page_layout.addWidget(info)
+
+        page_layout.addSpacing(16)
+
+        self._pw_install_btn = QPushButton("Install Firefox Browser")
+        self._pw_install_btn.setProperty("primary", True)
+        self._pw_install_btn.clicked.connect(self._on_install_playwright)
+        page_layout.addWidget(self._pw_install_btn)
+
+        self._pw_progress = QProgressBar()
+        self._pw_progress.setRange(0, 0)  # Indeterminate
+        self._pw_progress.hide()
+        page_layout.addWidget(self._pw_progress)
+
+        self._pw_status = QLabel("")
+        self._pw_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._pw_status.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt;")
+        page_layout.addWidget(self._pw_status)
+
+        page_layout.addStretch()
+        self._stack.addWidget(page)
+
+    def _on_install_playwright(self):
+        """Run Playwright Firefox install in a background thread."""
+        from portopt.utils.playwright_check import install_playwright_firefox
+
+        self._pw_install_btn.setEnabled(False)
+        self._pw_progress.show()
+        self._pw_status.setText("Installing Firefox browser engine...")
+
+        self._worker = run_in_thread(
+            install_playwright_firefox,
+            on_result=self._on_playwright_installed,
+            on_error=lambda e: self._on_playwright_install_error(str(e)),
+        )
+
+    def _on_playwright_installed(self, result):
+        success, output = result
+        self._pw_progress.hide()
+        if success:
+            self._pw_status.setText("Firefox installed successfully!")
+            self._pw_status.setStyleSheet(f"color: {Colors.PROFIT}; font-size: {Fonts.SIZE_SMALL}pt;")
+            # Transition to credentials page after brief delay
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1000, lambda: self._stack.setCurrentIndex(_Page.CREDENTIALS))
+        else:
+            self._pw_install_btn.setEnabled(True)
+            self._pw_status.setText(f"Install failed: {output[:100]}")
+            self._pw_status.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
+
+    def _on_playwright_install_error(self, error: str):
+        self._pw_progress.hide()
+        self._pw_install_btn.setEnabled(True)
+        self._pw_status.setText(f"Error: {error[:100]}")
+        self._pw_status.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
+
     def _setup_login_page(self):
-        """Page 0: Username/password entry."""
+        """Page 1: Username/password entry."""
         page = QWidget()
         form_layout = QVBoxLayout(page)
         form_layout.setContentsMargins(0, 8, 0, 0)
@@ -102,7 +189,7 @@ class FidelityLoginDialog(QDialog):
         self._stack.addWidget(page)
 
     def _setup_2fa_page(self):
-        """Page 1: 2FA code entry."""
+        """Page 2: 2FA code entry."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 16, 0, 0)
@@ -135,7 +222,7 @@ class FidelityLoginDialog(QDialog):
         self._stack.addWidget(page)
 
     def _setup_progress_page(self):
-        """Page 2: Connection progress."""
+        """Page 3: Connection progress."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 40, 0, 0)
@@ -153,7 +240,7 @@ class FidelityLoginDialog(QDialog):
         self._stack.addWidget(page)
 
     def _setup_result_page(self):
-        """Page 3: Success/failure result."""
+        """Page 4: Success/failure result."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 30, 0, 0)
@@ -210,13 +297,26 @@ class FidelityLoginDialog(QDialog):
         self.reject()
 
     # ── State Changes (called by controller) ─────────────────────────
+    def prefill_credentials(self, username: str, password: str, totp: str):
+        """Populate input fields with saved credentials."""
+        if username:
+            self._username_input.setText(username)
+        if password:
+            self._password_input.setText(password)
+        if totp:
+            self._totp_input.setText(totp)
+
+    def show_playwright_setup(self):
+        """Switch to the Playwright setup page."""
+        self._stack.setCurrentIndex(_Page.PLAYWRIGHT_SETUP)
+
     def show_2fa(self):
-        self._stack.setCurrentIndex(1)
+        self._stack.setCurrentIndex(_Page.TWOFA)
         self._twofa_input.setFocus()
 
     def show_progress(self, text: str = "Connecting..."):
         self._progress_label.setText(text)
-        self._stack.setCurrentIndex(2)
+        self._stack.setCurrentIndex(_Page.PROGRESS)
 
     def show_success(self, detail: str = ""):
         self._result_icon.setText("OK")
@@ -226,7 +326,7 @@ class FidelityLoginDialog(QDialog):
         self._result_detail.setText(detail)
         self._done_btn.show()
         self._skip_btn.hide()
-        self._stack.setCurrentIndex(3)
+        self._stack.setCurrentIndex(_Page.RESULT)
 
     def show_error(self, message: str):
         self._result_icon.setText("X")
@@ -237,8 +337,8 @@ class FidelityLoginDialog(QDialog):
         self._done_btn.setText("Retry")
         self._done_btn.show()
         self._done_btn.clicked.disconnect()
-        self._done_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
-        self._stack.setCurrentIndex(3)
+        self._done_btn.clicked.connect(lambda: self._stack.setCurrentIndex(_Page.CREDENTIALS))
+        self._stack.setCurrentIndex(_Page.RESULT)
 
     @property
     def remember_credentials(self) -> bool:

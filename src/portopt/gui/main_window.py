@@ -108,9 +108,20 @@ class MainWindow(QMainWindow):
 
         if self.fidelity_controller.has_saved_session:
             self.console_panel.log_info("Found saved Fidelity session, attempting auto-connect...")
+            self.set_fidelity_status(None)  # amber = connecting
             self.fidelity_controller.try_auto_connect()
         else:
-            self.console_panel.log_info("No saved Fidelity session. Use Data > Fidelity Connection to link your account.")
+            # Try loading cached portfolio for offline startup
+            cached = self.fidelity_controller.load_cached_portfolio()
+            if cached and cached.holdings:
+                self._portfolio = cached
+                self.portfolio_panel.set_portfolio(cached)
+                self.console_panel.log_info(
+                    f"Loaded cached portfolio: {len(cached.holdings)} positions "
+                    f"(last updated: {cached.last_updated.strftime('%Y-%m-%d %H:%M') if cached.last_updated else 'unknown'})"
+                )
+            else:
+                self.console_panel.log_info("No saved Fidelity session. Use Data > Fidelity Connection to link your account.")
 
     # ── Ticker Bar ───────────────────────────────────────────────────
     def _setup_ticker_bar(self):
@@ -167,6 +178,7 @@ class MainWindow(QMainWindow):
         self.fidelity_controller.status_changed.connect(
             lambda msg: self.console_panel.log_info(f"Fidelity: {msg}")
         )
+        self.fidelity_controller.playwright_missing.connect(self._on_playwright_missing)
 
         # Data controller
         self.data_controller = DataController(self)
@@ -422,14 +434,19 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     # ── Fidelity Connection Flow ─────────────────────────────────────
-    def _show_fidelity_login(self):
+    def _show_fidelity_login(self, show_playwright_setup: bool = False):
         """Show the Fidelity login dialog."""
-        self._fid_dialog = FidelityLoginDialog(self)
+        self._fid_dialog = FidelityLoginDialog(self, show_playwright_setup=show_playwright_setup)
         self._fid_dialog.login_requested.connect(self._on_fidelity_login)
         self._fid_dialog.twofa_submitted.connect(self._on_fidelity_2fa)
         self._fid_dialog.skip_requested.connect(
             lambda: self.console_panel.log_info("Fidelity connection skipped")
         )
+
+        # Pre-fill saved credentials
+        if self.fidelity_controller.has_saved_credentials:
+            user, pwd, totp = self.fidelity_controller.get_saved_credentials()
+            self._fid_dialog.prefill_credentials(user, pwd, totp)
 
         # Wire controller signals to dialog
         self.fidelity_controller.needs_2fa.connect(self._fid_dialog.show_2fa)
@@ -441,6 +458,7 @@ class MainWindow(QMainWindow):
         self._fid_dialog.exec()
 
     def _on_fidelity_login(self, username: str, password: str, totp: str):
+        self.set_fidelity_status(None)  # amber = connecting
         self.fidelity_controller.login(
             username, password, totp,
             save_credentials=self._fid_dialog.remember_credentials,
@@ -479,11 +497,28 @@ class MainWindow(QMainWindow):
     def _on_fidelity_error(self, msg: str):
         self.console_panel.log_error(f"Fidelity error: {msg}")
 
+    def _on_playwright_missing(self):
+        self.console_panel.log_warning(
+            "Playwright Firefox not installed. Fidelity connection requires a browser engine. "
+            "Use Data > Fidelity Connection to install it."
+        )
+        self.set_fidelity_status(False)
+
     def _refresh_fidelity(self):
         if self.fidelity_controller.is_connected:
             self.fidelity_controller.refresh_positions()
         else:
             self.console_panel.log_warning("Not connected to Fidelity. Use Data > Fidelity Connection.")
+
+    def _set_refresh_interval(self, minutes: int):
+        """Update auto-refresh interval and check the right menu item."""
+        self.fidelity_controller.set_refresh_interval(minutes)
+        # Update checked state of menu actions
+        intervals = [0, 1, 5, 15, 30]
+        for i, action in enumerate(self._refresh_actions):
+            action.setChecked(intervals[i] == minutes)
+        label = f"{minutes} min" if minutes > 0 else "off"
+        self.console_panel.log_info(f"Fidelity auto-refresh: {label}")
 
     # ── CSV Import ───────────────────────────────────────────────────
     def _import_csv(self):
@@ -589,6 +624,18 @@ class MainWindow(QMainWindow):
         data_menu = menubar.addMenu("&Data")
         data_menu.addAction(self._action("&Fidelity Connection...", "Ctrl+F", self._show_fidelity_login))
         data_menu.addAction(self._action("&Refresh Positions", "F5", self._refresh_fidelity))
+        data_menu.addSeparator()
+
+        # Auto-refresh submenu
+        refresh_menu = data_menu.addMenu("Auto-Refresh &Interval")
+        for label, mins in [("Off", 0), ("1 min", 1), ("5 min", 5), ("15 min", 15), ("30 min", 30)]:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(mins == 0)
+            m = mins  # capture for closure
+            action.triggered.connect(lambda checked, m=m: self._set_refresh_interval(m))
+            refresh_menu.addAction(action)
+        self._refresh_actions = refresh_menu.actions()
 
         # Optimize
         opt_menu = menubar.addMenu("&Optimize")
@@ -682,10 +729,18 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(5000, lambda: self._elapsed_label.setText(""))
         QTimer.singleShot(5000, lambda: self._op_status.setText(""))
 
-    def set_fidelity_status(self, connected: bool):
-        if connected:
+    def set_fidelity_status(self, connected: bool | None):
+        """Update Fidelity status indicator.
+
+        Args:
+            connected: True=green, False=red, None=amber (connecting)
+        """
+        if connected is True:
             self._fidelity_status.setText("FIDELITY: CONNECTED")
             self._fidelity_status.setStyleSheet(f"color: {Colors.PROFIT}; padding: 0 8px;")
+        elif connected is None:
+            self._fidelity_status.setText("FIDELITY: CONNECTING...")
+            self._fidelity_status.setStyleSheet(f"color: {Colors.WARNING}; padding: 0 8px;")
         else:
             self._fidelity_status.setText("FIDELITY: DISCONNECTED")
             self._fidelity_status.setStyleSheet(f"color: {Colors.LOSS}; padding: 0 8px;")
