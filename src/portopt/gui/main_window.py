@@ -106,7 +106,9 @@ class MainWindow(QMainWindow):
         cache_mb = self.data_controller.get_cache_size()
         self.set_cache_status(f"CACHE: {cache_mb:.1f} MB")
 
-        if self.fidelity_controller.has_saved_session:
+        if False and self.fidelity_controller.has_saved_session:
+            # Auto-connect disabled — too fragile with Playwright session persistence.
+            # Users should connect manually via Data > Fidelity Connection.
             self.console_panel.log_info("Found saved Fidelity session, attempting auto-connect...")
             self.set_fidelity_status(None)  # amber = connecting
             self.fidelity_controller.try_auto_connect()
@@ -436,6 +438,17 @@ class MainWindow(QMainWindow):
     # ── Fidelity Connection Flow ─────────────────────────────────────
     def _show_fidelity_login(self, show_playwright_setup: bool = False):
         """Show the Fidelity login dialog."""
+        # Disconnect any stale controller signals from previous dialogs
+        # to prevent race conditions with background auto-connect
+        try:
+            self.fidelity_controller.needs_2fa.disconnect()
+        except RuntimeError:
+            pass
+        try:
+            self.fidelity_controller.connection_error.disconnect()
+        except RuntimeError:
+            pass
+
         self._fid_dialog = FidelityLoginDialog(self, show_playwright_setup=show_playwright_setup)
         self._fid_dialog.login_requested.connect(self._on_fidelity_login)
         self._fid_dialog.interactive_login_requested.connect(self._on_fidelity_browser_login)

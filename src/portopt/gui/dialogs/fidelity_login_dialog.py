@@ -32,7 +32,7 @@ class FidelityLoginDialog(QDialog):
     def __init__(self, parent=None, show_playwright_setup: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Connect to Fidelity")
-        self.setFixedSize(440, 420)
+        self.setFixedSize(440, 500)
         self.setModal(True)
         self._worker = None  # prevent GC of install worker
 
@@ -147,12 +147,47 @@ class FidelityLoginDialog(QDialog):
         self._pw_status.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
 
     def _setup_login_page(self):
-        """Page 1: Username/password entry."""
+        """Page 1: Login options — browser login (primary) + auto-connect (secondary)."""
         page = QWidget()
         form_layout = QVBoxLayout(page)
         form_layout.setContentsMargins(0, 8, 0, 0)
 
-        group = QGroupBox("Credentials")
+        # Primary action: Login in Browser (recommended)
+        browser_info = QLabel(
+            "Log in to Fidelity in a browser window.\n"
+            "You handle credentials and 2FA yourself — most reliable method."
+        )
+        browser_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        browser_info.setWordWrap(True)
+        browser_info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Fonts.SIZE_SMALL}pt;")
+        form_layout.addWidget(browser_info)
+
+        self._browser_login_btn = QPushButton("Login in Browser (Recommended)")
+        self._browser_login_btn.setProperty("primary", True)
+        self._browser_login_btn.setFixedHeight(38)
+        self._browser_login_btn.clicked.connect(self._on_browser_login)
+        form_layout.addWidget(self._browser_login_btn)
+
+        form_layout.addSpacing(8)
+
+        # Separator
+        sep_layout = QHBoxLayout()
+        sep_line_l = QLabel()
+        sep_line_l.setFixedHeight(1)
+        sep_line_l.setStyleSheet(f"background: {Colors.BORDER};")
+        sep_label = QLabel("OR")
+        sep_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt;")
+        sep_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sep_line_r = QLabel()
+        sep_line_r.setFixedHeight(1)
+        sep_line_r.setStyleSheet(f"background: {Colors.BORDER};")
+        sep_layout.addWidget(sep_line_l, 1)
+        sep_layout.addWidget(sep_label)
+        sep_layout.addWidget(sep_line_r, 1)
+        form_layout.addLayout(sep_layout)
+
+        # Secondary: Automated login with credentials
+        group = QGroupBox("Auto-Connect (Advanced)")
         form = QFormLayout(group)
         form.setSpacing(8)
 
@@ -177,33 +212,8 @@ class FidelityLoginDialog(QDialog):
         form_layout.addWidget(self._remember_check)
 
         self._login_btn = QPushButton("Auto-Connect")
-        self._login_btn.setProperty("primary", True)
         self._login_btn.clicked.connect(self._on_login)
         form_layout.addWidget(self._login_btn)
-
-        # Separator
-        sep_layout = QHBoxLayout()
-        sep_line_l = QLabel()
-        sep_line_l.setFixedHeight(1)
-        sep_line_l.setStyleSheet(f"background: {Colors.BORDER};")
-        sep_label = QLabel("OR")
-        sep_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt;")
-        sep_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sep_line_r = QLabel()
-        sep_line_r.setFixedHeight(1)
-        sep_line_r.setStyleSheet(f"background: {Colors.BORDER};")
-        sep_layout.addWidget(sep_line_l, 1)
-        sep_layout.addWidget(sep_label)
-        sep_layout.addWidget(sep_line_r, 1)
-        form_layout.addLayout(sep_layout)
-
-        self._browser_login_btn = QPushButton("Login in Browser")
-        self._browser_login_btn.setToolTip(
-            "Opens a Firefox window where you log in to Fidelity yourself.\n"
-            "Handles all 2FA methods automatically."
-        )
-        self._browser_login_btn.clicked.connect(self._on_browser_login)
-        form_layout.addWidget(self._browser_login_btn)
 
         self._login_error = QLabel("")
         self._login_error.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
