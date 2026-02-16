@@ -1,12 +1,15 @@
 """Main trading terminal window with dockable panel system."""
 
 import logging
+from datetime import date, timedelta
 
-from PySide6.QtCore import Qt, QSize, QTimer
+import numpy as np
+import pandas as pd
+from PySide6.QtCore import Qt, QSize, QTimer, QSettings
 from PySide6.QtGui import QAction, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QMainWindow, QMenuBar, QMenu, QStatusBar, QLabel,
-    QDockWidget, QVBoxLayout, QWidget, QFileDialog,
+    QDockWidget, QVBoxLayout, QWidget, QFileDialog, QMessageBox,
 )
 
 from portopt.constants import APP_NAME, APP_VERSION, Colors, Fonts, PanelID
@@ -29,9 +32,16 @@ from portopt.gui.panels.risk_panel import RiskPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.data_controller import DataController
+from portopt.gui.controllers.optimization_controller import OptimizationController
+from portopt.gui.controllers.backtest_controller import BacktestController
 from portopt.gui.dialogs.fidelity_login_dialog import FidelityLoginDialog
+from portopt.gui.dialogs.bl_views_dialog import BLViewsDialog
+from portopt.gui.dialogs.constraint_dialog import ConstraintDialog
+from portopt.gui.dialogs.export_dialog import ExportDialog, export_weights_csv, export_trades_csv, export_metrics_csv
+from portopt.gui.dialogs.layout_dialog import LayoutDialog
 from portopt.data.importers.fidelity_csv import parse_fidelity_csv
 from portopt.data.importers.generic_csv import parse_generic_csv
+from portopt.engine.constraints import PortfolioConstraints
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +69,10 @@ class MainWindow(QMainWindow):
         # Panels registry
         self.panels: dict[str, QDockWidget] = {}
 
-        # Current portfolio
+        # State
         self._portfolio = None
+        self._constraints = PortfolioConstraints()
+        self._settings = QSettings(APP_NAME, APP_NAME)
 
         self._setup_ticker_bar()
         self._setup_panels()
@@ -69,6 +81,14 @@ class MainWindow(QMainWindow):
         self._setup_status_bar()
         self._setup_logging()
         self._setup_default_layout()
+
+        # Restore window geometry
+        geo = self._settings.value("window/geometry")
+        if geo:
+            self.restoreGeometry(geo)
+        state = self._settings.value("window/state")
+        if state:
+            self.restoreState(state)
 
         # Try restoring last session layout
         if not self.dock_manager.restore_session():
@@ -152,9 +172,40 @@ class MainWindow(QMainWindow):
             lambda msg: self.console_panel.log_error(f"Data error: {msg}")
         )
 
-        # Portfolio panel signals
+        # Optimization controller
+        self.opt_controller = OptimizationController(self.data_controller, self)
+        self.opt_controller.optimization_complete.connect(self._on_optimization_complete)
+        self.opt_controller.frontier_complete.connect(self._on_frontier_complete)
+        self.opt_controller.frontier_assets.connect(self._on_frontier_assets)
+        self.opt_controller.correlation_ready.connect(self._on_correlation_ready)
+        self.opt_controller.mst_ready.connect(self._on_mst_ready)
+        self.opt_controller.dendrogram_ready.connect(self._on_dendrogram_ready)
+        self.opt_controller.risk_metrics_ready.connect(self._on_risk_metrics)
+        self.opt_controller.status_changed.connect(
+            lambda msg: self.console_panel.log_info(f"Opt: {msg}")
+        )
+        self.opt_controller.error.connect(
+            lambda msg: self.console_panel.log_error(f"Opt error: {msg}")
+        )
+
+        # Backtest controller
+        self.bt_controller = BacktestController(self.data_controller, self)
+        self.bt_controller.equity_curve_ready.connect(self._on_equity_curve)
+        self.bt_controller.drawdown_ready.connect(self._on_drawdown)
+        self.bt_controller.metrics_ready.connect(self._on_bt_metrics)
+        self.bt_controller.trades_ready.connect(self._on_trades)
+        self.bt_controller.status_changed.connect(
+            lambda msg: self.console_panel.log_info(f"Backtest: {msg}")
+        )
+        self.bt_controller.error.connect(
+            lambda msg: self.console_panel.log_error(f"Backtest error: {msg}")
+        )
+
+        # Panel signals
         self.portfolio_panel.connect_requested.connect(self._show_fidelity_login)
         self.portfolio_panel.refresh_requested.connect(self._refresh_fidelity)
+        self.optimization_panel.run_requested.connect(self._run_optimization)
+        self.backtest_panel.run_requested.connect(self._run_backtest)
 
     # ── Logging ──────────────────────────────────────────────────────
     def _setup_logging(self):
@@ -164,6 +215,162 @@ class MainWindow(QMainWindow):
         root = logging.getLogger("portopt")
         root.addHandler(handler)
         root.setLevel(logging.INFO)
+
+    # ── Optimization Flow ────────────────────────────────────────────
+    def _run_optimization(self, config: dict):
+        """Handle optimization run from panel or menu."""
+        symbols = self._get_active_symbols()
+        if not symbols:
+            self.console_panel.log_warning("No symbols selected. Import a portfolio or add symbols to watchlist.")
+            return
+
+        self.optimization_panel.set_running(True)
+        self.console_panel.log_info(f"Running optimization on {len(symbols)} symbols...")
+
+        # Feed config with current constraints
+        config["long_only"] = self._constraints.long_only
+        config["min_weight"] = self._constraints.min_weight
+        config["max_weight"] = self._constraints.max_weight
+
+        self.opt_controller.fetch_and_optimize(symbols, config)
+
+    def _on_optimization_complete(self, result):
+        """Handle optimization result."""
+        self.optimization_panel.set_running(False)
+
+        # Update weights panel
+        current = self._portfolio.weights if self._portfolio else {}
+        self.weights_panel.set_weights(current, result.weights)
+
+        # Update frontier with optimal point
+        self.frontier_panel.set_optimal_portfolio(
+            result.volatility, result.expected_return, result.method,
+        )
+
+        self.console_panel.log_success(
+            f"Optimization complete: {result.method} | "
+            f"Sharpe={result.sharpe_ratio:.3f}"
+        )
+
+    def _on_frontier_complete(self, risks, returns):
+        self.frontier_panel.clear_plot()
+        self.frontier_panel.set_frontier(risks, returns)
+
+    def _on_frontier_assets(self, symbols, vols, mus):
+        self.frontier_panel.set_individual_assets(symbols, vols, mus)
+
+    def _on_correlation_ready(self, corr_matrix, labels):
+        self.correlation_panel.set_correlation(corr_matrix, labels)
+
+    def _on_mst_ready(self, nodes, edges, sectors):
+        self.network_panel.set_mst(nodes, edges, sectors)
+
+    def _on_dendrogram_ready(self, linkage_matrix, labels):
+        self.dendrogram_panel.set_dendrogram(linkage_matrix, labels)
+
+    def _on_risk_metrics(self, metrics):
+        self.risk_panel.set_risk_metrics(metrics)
+
+    # ── Backtest Flow ────────────────────────────────────────────────
+    def _run_backtest(self, config: dict):
+        """Handle backtest run from panel or menu."""
+        symbols = self._get_active_symbols()
+        if not symbols:
+            self.console_panel.log_warning("No symbols selected for backtest.")
+            return
+
+        self.console_panel.log_info(f"Running backtest on {len(symbols)} symbols...")
+        self.bt_controller.fetch_and_backtest(symbols, config)
+
+    def _on_equity_curve(self, dates_epoch, values):
+        self.backtest_panel.set_equity_curve(dates_epoch, values)
+
+    def _on_drawdown(self, dates_epoch, drawdowns):
+        self.backtest_panel.set_drawdown(dates_epoch, drawdowns)
+
+    def _on_bt_metrics(self, metrics):
+        self.metrics_panel.set_metrics(metrics)
+
+    def _on_trades(self, trades):
+        self.trade_blotter_panel.set_trades(trades)
+
+    # ── Dialogs ──────────────────────────────────────────────────────
+    def _show_bl_views(self):
+        """Show Black-Litterman views dialog."""
+        symbols = self._get_active_symbols()
+        if not symbols:
+            self.console_panel.log_warning("Load a portfolio first to set BL views.")
+            return
+        dialog = BLViewsDialog(symbols, self)
+        dialog.views_submitted.connect(self.opt_controller.set_bl_views)
+        dialog.exec()
+
+    def _show_constraints(self):
+        """Show constraints editor dialog."""
+        symbols = self._get_active_symbols()
+        dialog = ConstraintDialog(symbols, self._constraints, self)
+        dialog.constraints_updated.connect(self._on_constraints_updated)
+        dialog.exec()
+
+    def _on_constraints_updated(self, constraints):
+        self._constraints = constraints
+        self.console_panel.log_info(
+            f"Constraints updated: long_only={constraints.long_only}, "
+            f"bounds=[{constraints.min_weight:.3f}, {constraints.max_weight:.3f}]"
+        )
+
+    def _show_export(self):
+        """Show export dialog."""
+        has_weights = self.opt_controller.last_result is not None
+        has_bt = self.bt_controller.last_output is not None
+        dialog = ExportDialog(self, has_weights=has_weights, has_backtest=has_bt)
+        dialog.export_requested.connect(self._do_export)
+        dialog.exec()
+
+    def _do_export(self, config: dict):
+        fmt = config["format"]
+        path = config["path"]
+        try:
+            if "Weights" in fmt and self.opt_controller.last_result:
+                result = self.opt_controller.last_result
+                metadata = {"method": result.method, "sharpe": f"{result.sharpe_ratio:.4f}"}
+                if config.get("include_metadata"):
+                    export_weights_csv(result.weights, path, metadata)
+                else:
+                    export_weights_csv(result.weights, path)
+                self.console_panel.log_success(f"Weights exported to {path}")
+
+            elif "Trades" in fmt and self.bt_controller.last_output:
+                output = self.bt_controller.last_output
+                trades = []
+                if output.result:
+                    trades = self.bt_controller._trades_to_dicts(output.result.trades)
+                export_trades_csv(trades, path)
+                self.console_panel.log_success(f"Trades exported to {path}")
+
+            elif "Metrics" in fmt:
+                metrics = {}
+                if self.bt_controller.last_output:
+                    metrics = self.bt_controller.last_output.metrics
+                export_metrics_csv(metrics, path)
+                self.console_panel.log_success(f"Metrics exported to {path}")
+        except Exception as e:
+            self.console_panel.log_error(f"Export failed: {e}")
+
+    def _show_layout_manager(self):
+        """Show layout save/load dialog."""
+        saved = self.dock_manager.list_layouts()
+        dialog = LayoutDialog(saved, self)
+        dialog.layout_save_requested.connect(
+            lambda name: self.dock_manager.save_layout(name)
+        )
+        dialog.layout_load_requested.connect(
+            lambda name: self.dock_manager.restore_layout(name)
+        )
+        dialog.layout_delete_requested.connect(
+            lambda name: self.dock_manager.delete_layout(name)
+        )
+        dialog.exec()
 
     # ── Fidelity Connection Flow ─────────────────────────────────────
     def _show_fidelity_login(self):
@@ -194,7 +401,6 @@ class MainWindow(QMainWindow):
         self.fidelity_controller.submit_2fa(code)
 
     def _on_fidelity_needs_2fa(self):
-        # If dialog isn't open, open it at 2FA page
         if not hasattr(self, '_fid_dialog') or not self._fid_dialog.isVisible():
             self._show_fidelity_login()
             self._fid_dialog.show_2fa()
@@ -207,9 +413,8 @@ class MainWindow(QMainWindow):
             f"Fidelity connected: {len(portfolio.holdings)} positions, "
             f"${portfolio.total_value:,.2f} total value"
         )
-        # Update ticker bar with portfolio symbols
         items = []
-        for h in portfolio.holdings[:20]:  # Top 20 for ticker bar
+        for h in portfolio.holdings[:20]:
             items.append({
                 "symbol": h.asset.symbol,
                 "price": h.current_price,
@@ -240,7 +445,6 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            # Try Fidelity format first, fall back to generic
             try:
                 portfolio = parse_fidelity_csv(path)
                 self.console_panel.log_success(f"Imported Fidelity CSV: {len(portfolio.holdings)} positions")
@@ -252,6 +456,18 @@ class MainWindow(QMainWindow):
             self.portfolio_panel.set_portfolio(portfolio)
         except Exception as e:
             self.console_panel.log_error(f"CSV import failed: {e}")
+
+    # ── Helpers ───────────────────────────────────────────────────────
+    def _get_active_symbols(self) -> list[str]:
+        """Get the current list of symbols to optimize/backtest."""
+        if self._portfolio and self._portfolio.symbols:
+            return self._portfolio.symbols
+        # Fallback: check watchlist
+        if hasattr(self.watchlist_panel, 'get_symbols'):
+            syms = self.watchlist_panel.get_symbols()
+            if syms:
+                return syms
+        return []
 
     # ── Layout ───────────────────────────────────────────────────────
     def _setup_default_layout(self):
@@ -304,14 +520,11 @@ class MainWindow(QMainWindow):
 
         # File
         file_menu = menubar.addMenu("&File")
-        import_action = self._action("&Import CSV...", "Ctrl+I", self._import_csv)
-        file_menu.addAction(import_action)
+        file_menu.addAction(self._action("&Import CSV...", "Ctrl+I", self._import_csv))
         file_menu.addSeparator()
-        file_menu.addAction(self._action("E&xport Weights CSV...", "Ctrl+Shift+W"))
-        file_menu.addAction(self._action("Export &Report PDF...", "Ctrl+Shift+R"))
+        file_menu.addAction(self._action("E&xport...", "Ctrl+Shift+E", self._show_export))
         file_menu.addSeparator()
-        exit_action = self._action("&Exit", "Ctrl+Q", self.close)
-        file_menu.addAction(exit_action)
+        file_menu.addAction(self._action("&Exit", "Ctrl+Q", self.close))
 
         # View
         view_menu = menubar.addMenu("&View")
@@ -321,30 +534,26 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         layout_menu = view_menu.addMenu("&Layouts")
         layout_menu.addAction(self._action("Default Layout", callback=self._setup_default_layout))
-        layout_menu.addAction(self._action("Save Layout...", "Ctrl+Shift+L"))
+        layout_menu.addAction(self._action("Save/Load Layout...", "Ctrl+Shift+L", self._show_layout_manager))
 
         # Data
         data_menu = menubar.addMenu("&Data")
         data_menu.addAction(self._action("&Fidelity Connection...", "Ctrl+F", self._show_fidelity_login))
         data_menu.addAction(self._action("&Refresh Positions", "F5", self._refresh_fidelity))
-        data_menu.addSeparator()
-        data_menu.addAction(self._action("&Cache Management..."))
 
         # Optimize
         opt_menu = menubar.addMenu("&Optimize")
-        opt_menu.addAction(self._action("&Run Optimization", "Ctrl+O"))
-        opt_menu.addAction(self._action("&Black-Litterman Views...", "Ctrl+Shift+B"))
-        opt_menu.addAction(self._action("&Constraints...", "Ctrl+Shift+C"))
+        opt_menu.addAction(self._action("&Run Optimization", "Ctrl+O", lambda: self._run_optimization(self.optimization_panel.get_config())))
+        opt_menu.addAction(self._action("&Black-Litterman Views...", "Ctrl+Shift+B", self._show_bl_views))
+        opt_menu.addAction(self._action("&Constraints...", "Ctrl+Shift+C", self._show_constraints))
 
         # Backtest
         bt_menu = menubar.addMenu("&Backtest")
-        bt_menu.addAction(self._action("&Run Backtest", "Ctrl+B"))
-        bt_menu.addAction(self._action("&Walk-Forward Config..."))
+        bt_menu.addAction(self._action("&Run Backtest", "Ctrl+B", lambda: self._run_backtest(self.backtest_panel.get_config())))
 
         # Help
         help_menu = menubar.addMenu("&Help")
-        help_menu.addAction(self._action("&About"))
-        help_menu.addAction(self._action("&Keyboard Shortcuts"))
+        help_menu.addAction(self._action("&About", callback=self._show_about))
 
     def _action(self, text: str, shortcut: str = None, callback=None) -> QAction:
         action = QAction(text, self)
@@ -353,6 +562,21 @@ class MainWindow(QMainWindow):
         if callback:
             action.triggered.connect(callback)
         return action
+
+    def _show_about(self):
+        QMessageBox.about(
+            self, f"About {APP_NAME}",
+            f"<b>{APP_NAME} v{APP_VERSION}</b><br><br>"
+            f"Professional portfolio optimization and backtesting terminal.<br>"
+            f"Implements all methods from Hudson & Thames guide.<br><br>"
+            f"<b>Shortcuts:</b><br>"
+            f"Ctrl+O — Run Optimization<br>"
+            f"Ctrl+B — Run Backtest<br>"
+            f"Ctrl+I — Import CSV<br>"
+            f"Ctrl+F — Fidelity Connection<br>"
+            f"F5 — Refresh Positions<br>"
+            f"Ctrl+Q — Exit"
+        )
 
     # ── Status Bar ───────────────────────────────────────────────────
     def _setup_status_bar(self):
@@ -391,6 +615,8 @@ class MainWindow(QMainWindow):
     # ── Lifecycle ────────────────────────────────────────────────────
     def closeEvent(self, event):
         """Save session state and clean up on close."""
+        self._settings.setValue("window/geometry", self.saveGeometry())
+        self._settings.setValue("window/state", self.saveState())
         self.dock_manager.save_session()
         self.fidelity_controller.close()
         self.data_controller.close()
