@@ -121,6 +121,37 @@ class FidelityAutoImporter:
             logger.error("Fidelity login error: %s", e)
             raise  # Surface real error to controller/UI
 
+    def login_interactive(self, timeout_sec: int = 300) -> bool:
+        """Open a visible browser and let the user log in manually.
+
+        Opens Firefox to Fidelity's login page. The user handles credentials
+        and 2FA themselves. We wait until the browser reaches the portfolio
+        summary page (up to timeout_sec seconds).
+
+        Returns True if the user successfully logged in.
+        """
+        try:
+            self._create_automation(headless=False)
+            self._fidelity.page.goto(
+                "https://digital.fidelity.com/prgw/digital/login/full-page",
+                timeout=60000,
+            )
+            logger.info("Interactive login: browser opened, waiting for user to log in...")
+
+            # Wait for the user to reach the portfolio summary page
+            self._fidelity.page.wait_for_url(
+                "**/digital/portfolio/summary",
+                timeout=timeout_sec * 1000,
+            )
+            self._logged_in = True
+            logger.info("Interactive login: user reached portfolio page")
+            return True
+        except PlaywrightNotInstalledError:
+            raise
+        except Exception as e:
+            logger.error("Interactive login failed: %s", e)
+            raise
+
     def complete_2fa(self, code: str, save_device: bool = True) -> bool:
         """Complete 2FA with the code sent to the user's phone.
 

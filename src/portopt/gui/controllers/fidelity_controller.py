@@ -116,6 +116,23 @@ class FidelityController(QObject):
             on_error=self._on_connect_error,
         )
 
+    def login_interactive(self):
+        """Open a visible browser and let the user log in manually."""
+        self.status_changed.emit("Opening browser — log in to Fidelity...")
+        self._worker = run_in_thread(
+            self._importer.login_interactive,
+            on_result=self._on_interactive_login_result,
+            on_error=self._on_connect_error,
+        )
+
+    def _on_interactive_login_result(self, success):
+        if success:
+            self.status_changed.emit("Logged in, fetching positions...")
+            self._fetch_positions()
+        else:
+            self.status_changed.emit("Login failed")
+            self.connection_error.emit("Login was not completed in the browser.")
+
     def _on_login_result(self, result):
         success, needs_2fa = result
         if success and not needs_2fa:

@@ -25,6 +25,7 @@ class FidelityLoginDialog(QDialog):
     """Multi-step Fidelity login dialog: [playwright setup] -> credentials -> 2FA -> done."""
 
     login_requested = Signal(str, str, str)  # username, password, totp_secret
+    interactive_login_requested = Signal()   # open browser for manual login
     twofa_submitted = Signal(str)            # code
     skip_requested = Signal()
 
@@ -175,10 +176,34 @@ class FidelityLoginDialog(QDialog):
         self._remember_check.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Fonts.SIZE_SMALL}pt;")
         form_layout.addWidget(self._remember_check)
 
-        self._login_btn = QPushButton("Connect")
+        self._login_btn = QPushButton("Auto-Connect")
         self._login_btn.setProperty("primary", True)
         self._login_btn.clicked.connect(self._on_login)
         form_layout.addWidget(self._login_btn)
+
+        # Separator
+        sep_layout = QHBoxLayout()
+        sep_line_l = QLabel()
+        sep_line_l.setFixedHeight(1)
+        sep_line_l.setStyleSheet(f"background: {Colors.BORDER};")
+        sep_label = QLabel("OR")
+        sep_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt;")
+        sep_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sep_line_r = QLabel()
+        sep_line_r.setFixedHeight(1)
+        sep_line_r.setStyleSheet(f"background: {Colors.BORDER};")
+        sep_layout.addWidget(sep_line_l, 1)
+        sep_layout.addWidget(sep_label)
+        sep_layout.addWidget(sep_line_r, 1)
+        form_layout.addLayout(sep_layout)
+
+        self._browser_login_btn = QPushButton("Login in Browser")
+        self._browser_login_btn.setToolTip(
+            "Opens a Firefox window where you log in to Fidelity yourself.\n"
+            "Handles all 2FA methods automatically."
+        )
+        self._browser_login_btn.clicked.connect(self._on_browser_login)
+        form_layout.addWidget(self._browser_login_btn)
 
         self._login_error = QLabel("")
         self._login_error.setStyleSheet(f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;")
@@ -281,6 +306,10 @@ class FidelityLoginDialog(QDialog):
         self._login_error.hide()
         self.show_progress("Logging in to Fidelity...")
         self.login_requested.emit(username, password, totp)
+
+    def _on_browser_login(self):
+        self.show_progress("Opening browser — log in to Fidelity there...")
+        self.interactive_login_requested.emit()
 
     def _on_2fa_submit(self):
         code = self._twofa_input.text().strip()

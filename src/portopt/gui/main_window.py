@@ -438,6 +438,7 @@ class MainWindow(QMainWindow):
         """Show the Fidelity login dialog."""
         self._fid_dialog = FidelityLoginDialog(self, show_playwright_setup=show_playwright_setup)
         self._fid_dialog.login_requested.connect(self._on_fidelity_login)
+        self._fid_dialog.interactive_login_requested.connect(self._on_fidelity_browser_login)
         self._fid_dialog.twofa_submitted.connect(self._on_fidelity_2fa)
         self._fid_dialog.skip_requested.connect(
             lambda: self.console_panel.log_info("Fidelity connection skipped")
@@ -463,6 +464,10 @@ class MainWindow(QMainWindow):
             username, password, totp,
             save_credentials=self._fid_dialog.remember_credentials,
         )
+
+    def _on_fidelity_browser_login(self):
+        self.set_fidelity_status(None)  # amber = connecting
+        self.fidelity_controller.login_interactive()
 
     def _on_fidelity_2fa(self, code: str):
         self.fidelity_controller.submit_2fa(code)
