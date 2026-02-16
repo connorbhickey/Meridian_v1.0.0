@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 from scipy import linalg
 
 from portopt.constants import CovEstimator
 from portopt.engine.returns import log_returns
+
+logger = logging.getLogger(__name__)
 
 
 def estimate_covariance(
@@ -86,6 +90,14 @@ def _denoised(
     rets = log_returns(prices)
     T, N = rets.shape
     q = T / N  # observations-to-variables ratio
+
+    # When T < N, Marchenko-Pastur theorem breaks down — fall back to Ledoit-Wolf
+    if q < 1.0:
+        logger.warning(
+            "Denoising: T=%d < N=%d (q=%.2f < 1), falling back to Ledoit-Wolf shrinkage",
+            T, N, q,
+        )
+        return _ledoit_wolf(prices, frequency)
 
     # Sample covariance and correlation
     sample_cov = rets.cov()

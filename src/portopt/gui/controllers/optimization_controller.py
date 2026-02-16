@@ -42,11 +42,13 @@ class OptimizationController(QObject):
     error = Signal(str)
     status_changed = Signal(str)
     progress = Signal(str)
+    running_changed = Signal(bool)
 
     def __init__(self, data_controller, parent=None):
         super().__init__(parent)
         self.data_controller = data_controller
         self._worker = None
+        self._running = False
         self._prices: pd.DataFrame | None = None
         self._symbols: list[str] = []
         self._bl_views: list[BLView] = []
@@ -90,10 +92,16 @@ class OptimizationController(QObject):
             min_weight: float
             max_weight: float
         """
+        if self._running:
+            self.error.emit("Optimization already running. Please wait.")
+            return
+
         if self._prices is None or self._prices.empty:
             self.error.emit("No price data available. Load prices first.")
             return
 
+        self._running = True
+        self.running_changed.emit(True)
         self.status_changed.emit("Running optimization...")
         self.progress.emit("Estimating returns and covariance...")
 
@@ -258,6 +266,8 @@ class OptimizationController(QObject):
 
     def _on_optimization_done(self, output: dict):
         """Handle optimization results on main thread."""
+        self._running = False
+        self.running_changed.emit(False)
         result: OptimizationResult = output["result"]
         self._last_result = result
 
@@ -304,6 +314,8 @@ class OptimizationController(QObject):
         self.risk_metrics_ready.emit(risk_metrics)
 
     def _on_error(self, msg: str):
+        self._running = False
+        self.running_changed.emit(False)
         logger.error("Optimization error: %s", msg)
         self.status_changed.emit("Optimization failed")
         self.error.emit(f"Optimization error: {msg}")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import date, datetime
 from pathlib import Path
 
@@ -18,16 +19,18 @@ class CacheDB:
     def __init__(self, db_path: Path | None = None):
         self._path = db_path or get_cache_db_path()
         self._conn: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
         self._ensure_tables()
 
     @property
     def conn(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(str(self._path))
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA foreign_keys=ON")
-        return self._conn
+        with self._lock:
+            if self._conn is None:
+                self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
+                self._conn.row_factory = sqlite3.Row
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute("PRAGMA foreign_keys=ON")
+            return self._conn
 
     def _ensure_tables(self):
         c = self.conn

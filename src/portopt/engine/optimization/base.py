@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -9,6 +10,8 @@ import pandas as pd
 
 from portopt.data.models import OptimizationResult
 from portopt.engine.constraints import PortfolioConstraints
+
+logger = logging.getLogger(__name__)
 
 
 class BaseOptimizer(ABC):
@@ -32,6 +35,29 @@ class BaseOptimizer(ABC):
         # Validate alignment
         assert list(covariance.index) == self.symbols, "Returns and covariance must have matching symbols"
 
+        # Guard: empty portfolio
+        if self.n_assets == 0:
+            raise ValueError("Cannot optimize with zero assets")
+
+        # Guard: NaN in expected returns
+        nan_mu = np.where(np.isnan(expected_returns.values))[0]
+        if len(nan_mu) > 0:
+            bad_syms = [self.symbols[i] for i in nan_mu]
+            raise ValueError(f"NaN in expected returns for: {', '.join(bad_syms)}")
+
+        # Guard: NaN in covariance matrix
+        if np.any(np.isnan(covariance.values)):
+            raise ValueError("NaN values found in covariance matrix")
+
+        # Guard: ensure positive semi-definite covariance
+        self._single_asset = (self.n_assets == 1)
+        if not self._single_asset:
+            from portopt.engine.risk import is_positive_definite, nearest_positive_definite
+            if not is_positive_definite(covariance.values):
+                logger.warning("Covariance matrix is not PSD — applying nearest PSD correction")
+                psd_vals = nearest_positive_definite(covariance.values)
+                self.covariance = pd.DataFrame(psd_vals, index=covariance.index, columns=covariance.columns)
+
     @abstractmethod
     def optimize(self) -> OptimizationResult:
         """Run the optimization and return results."""
@@ -54,6 +80,10 @@ class BaseOptimizer(ABC):
             sharpe_ratio=sharpe,
             metadata=metadata,
         )
+
+    def _single_asset_result(self, method: str) -> OptimizationResult:
+        """Return 100% weight to the single asset."""
+        return self._build_result(np.array([1.0]), method)
 
     def _portfolio_return(self, w: np.ndarray) -> float:
         return float(w @ self.expected_returns.values)

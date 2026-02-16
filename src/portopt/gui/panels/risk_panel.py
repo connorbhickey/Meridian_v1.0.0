@@ -50,6 +50,13 @@ class RiskPanel(BasePanel):
 
         splitter.addWidget(gauges_frame)
 
+        # ── Middle: Risk decomposition chart ─────────────────────────
+        self._decomp_plot = pg.PlotWidget(title="Risk Decomposition")
+        self._decomp_plot.setBackground(Colors.BG_SECONDARY)
+        self._decomp_plot.showGrid(x=False, y=True, alpha=0.15)
+        self._decomp_plot.setLabel("left", "Contribution %", color=Colors.TEXT_SECONDARY)
+        splitter.addWidget(self._decomp_plot)
+
         # ── Bottom: Drawdown chart ───────────────────────────────────
         self._dd_plot = pg.PlotWidget(title="Drawdown History")
         self._dd_plot.setBackground(Colors.BG_SECONDARY)
@@ -58,7 +65,7 @@ class RiskPanel(BasePanel):
         self._dd_plot.setLabel("bottom", "Date", color=Colors.TEXT_SECONDARY)
         splitter.addWidget(self._dd_plot)
 
-        splitter.setSizes([120, 280])
+        splitter.setSizes([120, 160, 220])
         layout.addWidget(splitter)
         self.content_layout.addLayout(layout)
 
@@ -152,11 +159,43 @@ class RiskPanel(BasePanel):
         self._dd_plot.plot(dates_epoch, dd_pct, pen=pen)
 
     def set_risk_decomposition(self, symbols: list[str], contributions: list[float]):
-        """Display risk contribution per asset as horizontal bars on drawdown chart."""
-        # Could be extended to a separate subplot; for now add text annotations
-        pass
+        """Display risk contribution per asset as horizontal bar chart."""
+        self._decomp_plot.clear()
+
+        if not symbols or not contributions:
+            return
+
+        n = len(symbols)
+        contribs = np.asarray(contributions) * 100  # Convert to %
+
+        # Horizontal bar chart using BarGraphItem
+        y_pos = np.arange(n)
+        colors = []
+        for c in contribs:
+            if c > 20:
+                colors.append(Colors.LOSS)
+            elif c > 10:
+                colors.append(Colors.WARNING)
+            else:
+                colors.append(Colors.ACCENT)
+
+        brushes = [pg.mkBrush(c) for c in colors]
+
+        bar = pg.BarGraphItem(
+            x0=0, y=y_pos, height=0.6,
+            width=contribs,
+            brushes=brushes,
+        )
+        self._decomp_plot.addItem(bar)
+
+        # Set Y-axis ticks to symbol names
+        y_axis = self._decomp_plot.getAxis("left")
+        ticks = [(i, sym) for i, sym in enumerate(symbols)]
+        y_axis.setTicks([ticks])
+        self._decomp_plot.setYRange(-0.5, n - 0.5)
 
     def clear_all(self):
         for val_widget in self._gauges.values():
             val_widget.setText("—")
         self._dd_plot.clear()
+        self._decomp_plot.clear()

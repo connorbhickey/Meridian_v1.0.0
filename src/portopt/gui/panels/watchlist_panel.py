@@ -96,6 +96,10 @@ class WatchlistPanel(BasePanel):
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._table.setItem(row, col, item)
 
+    def get_symbols(self) -> list[str]:
+        """Return list of ticker symbols currently in the watchlist."""
+        return [item["symbol"] for item in self._watchlist if item.get("symbol")]
+
     def _fmt_volume(self, vol):
         if vol >= 1_000_000:
             return f"{vol / 1_000_000:.1f}M"

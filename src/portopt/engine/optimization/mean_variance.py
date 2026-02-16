@@ -40,6 +40,9 @@ class MeanVarianceOptimizer(BaseOptimizer):
 
     def optimize(self) -> OptimizationResult:
         """Run the selected MVO method."""
+        if self._single_asset:
+            return self._single_asset_result(self.method.name.lower())
+
         dispatch = {
             OptMethod.INVERSE_VARIANCE: self._inverse_variance,
             OptMethod.MIN_VOLATILITY: self._min_volatility,

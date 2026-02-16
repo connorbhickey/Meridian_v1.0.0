@@ -7,11 +7,14 @@ with daily portfolio values, returns, trades, and rebalance events.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Callable
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from portopt.backtest.costs import BaseCostModel, ZeroCost
 from portopt.backtest.rebalancer import (
@@ -115,8 +118,13 @@ def run_backtest(
 
             try:
                 new_weights = optimizer_fn(available_prices, None)
-            except Exception:
-                # If optimization fails, keep current weights
+            except (np.linalg.LinAlgError, RuntimeError, ValueError) as e:
+                logger.warning("Optimization failed on %s: %s — using fallback weights", dt_date, e)
+                new_weights = current_weights.copy() if current_weights else {
+                    s: 1.0 / len(symbols) for s in symbols
+                }
+            except Exception as e:
+                logger.error("Unexpected optimization error on %s: %s — using fallback weights", dt_date, e)
                 new_weights = current_weights.copy() if current_weights else {
                     s: 1.0 / len(symbols) for s in symbols
                 }

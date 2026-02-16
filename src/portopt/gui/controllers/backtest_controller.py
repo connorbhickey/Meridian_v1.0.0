@@ -49,11 +49,13 @@ class BacktestController(QObject):
     error = Signal(str)
     status_changed = Signal(str)
     progress = Signal(str)
+    running_changed = Signal(bool)
 
     def __init__(self, data_controller, parent=None):
         super().__init__(parent)
         self.data_controller = data_controller
         self._worker = None
+        self._running = False
         self._prices: pd.DataFrame | None = None
         self._last_output: BacktestOutput | None = None
 
@@ -83,10 +85,16 @@ class BacktestController(QObject):
             initial_value: float
             lookback: int (days)
         """
+        if self._running:
+            self.error.emit("Backtest already running. Please wait.")
+            return
+
         if self._prices is None or self._prices.empty:
             self.error.emit("No price data available. Load prices first.")
             return
 
+        self._running = True
+        self.running_changed.emit(True)
         self.status_changed.emit("Running backtest...")
         self.progress.emit("Configuring backtest engine...")
 
@@ -145,6 +153,8 @@ class BacktestController(QObject):
 
     def _on_backtest_done(self, output: BacktestOutput):
         """Handle backtest results on main thread."""
+        self._running = False
+        self.running_changed.emit(False)
         self._last_output = output
         self.backtest_complete.emit(output)
 
@@ -205,6 +215,8 @@ class BacktestController(QObject):
                 pass
 
     def _on_error(self, msg: str):
+        self._running = False
+        self.running_changed.emit(False)
         logger.error("Backtest error: %s", msg)
         self.status_changed.emit("Backtest failed")
         self.error.emit(f"Backtest error: {msg}")

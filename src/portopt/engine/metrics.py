@@ -93,11 +93,13 @@ def annualized_return(returns: np.ndarray, frequency: int = 252) -> float:
 
 def cagr(returns: np.ndarray, frequency: int = 252) -> float:
     """Compound Annual Growth Rate."""
-    total = np.prod(1 + returns)
+    # Use log-sum-exp to avoid overflow for long return sequences
+    total = np.exp(np.sum(np.log1p(returns)))
     n_years = len(returns) / frequency
-    if n_years <= 0 or total <= 0:
+    if n_years <= 0 or total <= 0 or not np.isfinite(total):
         return 0.0
-    return float(total ** (1 / n_years) - 1)
+    result = total ** (1 / n_years) - 1
+    return float(result) if np.isfinite(result) else 0.0
 
 
 def annualized_volatility(returns: np.ndarray, frequency: int = 252) -> float:
@@ -199,7 +201,7 @@ def omega_ratio(returns: np.ndarray, threshold: float = 0.0) -> float:
     gains = np.sum(excess[excess > 0])
     losses = abs(np.sum(excess[excess <= 0]))
     if losses == 0:
-        return float("inf") if gains > 0 else 0.0
+        return 0.0
     return float(gains / losses)
 
 
@@ -208,7 +210,7 @@ def tail_ratio(returns: np.ndarray) -> float:
     p95 = np.percentile(returns, 95)
     p5 = abs(np.percentile(returns, 5))
     if p5 == 0:
-        return float("inf") if p95 > 0 else 0.0
+        return 0.0
     return float(p95 / p5)
 
 
@@ -217,7 +219,7 @@ def profit_factor(returns: np.ndarray) -> float:
     gains = np.sum(returns[returns > 0])
     losses = abs(np.sum(returns[returns < 0]))
     if losses == 0:
-        return float("inf") if gains > 0 else 0.0
+        return 0.0
     return float(gains / losses)
 
 

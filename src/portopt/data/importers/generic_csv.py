@@ -24,6 +24,20 @@ NAME_ALIASES = {"name", "description", "security_name", "company"}
 ACCOUNT_ALIASES = {"account", "account_name", "portfolio"}
 
 
+def _safe_float(value: str | None, default: float = 0.0) -> float:
+    """Safely parse a numeric string, stripping common formatting chars."""
+    if not value:
+        return default
+    try:
+        cleaned = value.strip().replace(",", "").replace("$", "").replace("%", "")
+        if not cleaned:
+            return default
+        return float(cleaned)
+    except (ValueError, TypeError):
+        logger.warning("Could not parse numeric value: %r — using default %.2f", value, default)
+        return default
+
+
 def _find_column(headers: list[str], aliases: set[str]) -> str | None:
     """Find the first matching column header from a set of aliases."""
     for h in headers:
@@ -58,9 +72,9 @@ def parse_generic_csv(file_path: str | Path) -> Portfolio:
             if not symbol:
                 continue
 
-            quantity = float(row.get(qty_col, "0").replace(",", "") or "0") if qty_col else 1.0
-            price = float(row.get(price_col, "0").replace(",", "").replace("$", "") or "0") if price_col else 0.0
-            cost = float(row.get(cost_col, "0").replace(",", "").replace("$", "") or "0") if cost_col else 0.0
+            quantity = _safe_float(row.get(qty_col), 1.0) if qty_col else 1.0
+            price = _safe_float(row.get(price_col), 0.0) if price_col else 0.0
+            cost = _safe_float(row.get(cost_col), 0.0) if cost_col else 0.0
             name = row.get(name_col, symbol) if name_col else symbol
             account = row.get(acct_col, "") if acct_col else ""
 

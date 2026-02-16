@@ -41,6 +41,18 @@ def hrp_optimize(
         OptimizationResult with HRP weights.
     """
     symbols = list(covariance.index)
+
+    # Single-asset guard
+    if len(symbols) == 1:
+        return OptimizationResult(
+            method="HRP",
+            weights={symbols[0]: 1.0},
+            expected_return=0.0,
+            volatility=float(np.sqrt(covariance.values[0, 0])),
+            sharpe_ratio=0.0,
+            metadata={"linkage_method": linkage_method.value, "risk_measure": risk_measure.name},
+        )
+
     cov = covariance.values
     corr = cov_to_corr(covariance).values
 
@@ -147,8 +159,8 @@ def _cluster_risk(
     """Compute the risk of a cluster using inverse-variance weights within the cluster."""
     sub_cov = cov[np.ix_(indices, indices)]
 
-    # Inverse variance weights within cluster
-    inv_var = 1.0 / np.diag(sub_cov)
+    # Inverse variance weights within cluster (guard against zero variance)
+    inv_var = 1.0 / np.maximum(np.diag(sub_cov), 1e-10)
     w = inv_var / inv_var.sum()
 
     if risk_measure == RiskMeasure.VARIANCE:

@@ -209,7 +209,7 @@ class BacktestPanel(BasePanel):
             "drift_threshold": self._drift_spin.value(),
             "cost_model": self._cost_combo.currentData(),
             "cost_rate": self._cost_rate_spin.value(),
-            "walk_forward": self._wf_check.isChecked(),
+            "walk_forward_enabled": self._wf_check.isChecked(),
             "train_window": self._train_spin.value(),
             "test_window": self._test_spin.value(),
             "anchored": self._anchored_check.isChecked(),

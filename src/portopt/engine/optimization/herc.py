@@ -41,9 +41,21 @@ def herc_optimize(
         OptimizationResult with HERC weights.
     """
     symbols = list(covariance.index)
+    n = len(symbols)
+
+    # Single-asset guard
+    if n == 1:
+        return OptimizationResult(
+            method="HERC",
+            weights={symbols[0]: 1.0},
+            expected_return=0.0,
+            volatility=float(np.sqrt(covariance.values[0, 0])),
+            sharpe_ratio=0.0,
+            metadata={"linkage_method": linkage_method.value, "risk_measure": risk_measure.name, "n_clusters": 1},
+        )
+
     cov = covariance.values
     corr = cov_to_corr(covariance).values
-    n = len(symbols)
 
     # Step 1: Hierarchical clustering
     dist = np.sqrt(0.5 * (1 - corr))
