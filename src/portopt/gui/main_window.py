@@ -6,10 +6,10 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 from PySide6.QtCore import Qt, QSize, QTimer, QSettings
-from PySide6.QtGui import QAction, QFont, QKeySequence
+from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QMainWindow, QMenuBar, QMenu, QStatusBar, QLabel,
-    QDockWidget, QVBoxLayout, QWidget, QFileDialog, QMessageBox,
+    QDockWidget, QHBoxLayout, QVBoxLayout, QWidget, QFileDialog, QMessageBox,
 )
 
 from portopt.constants import APP_NAME, APP_VERSION, Colors, Fonts, PanelID
@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — Quantitative Portfolio Terminal")
+        self._set_app_icon()
         self.setMinimumSize(QSize(1280, 800))
         self.resize(1600, 1000)
 
@@ -98,6 +99,19 @@ class MainWindow(QMainWindow):
 
         # Startup: try auto-connect to Fidelity after window is shown
         QTimer.singleShot(500, self._on_startup)
+
+    def _set_app_icon(self):
+        """Set the window icon and taskbar icon."""
+        from pathlib import Path
+        icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
+        if icon_path.exists():
+            icon = QIcon(str(icon_path))
+            self.setWindowIcon(icon)
+            # Also set on the QApplication for taskbar
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app:
+                app.setWindowIcon(icon)
 
     # ── Startup ──────────────────────────────────────────────────────
     def _on_startup(self):
@@ -619,6 +633,27 @@ class MainWindow(QMainWindow):
     # ── Menu Bar ─────────────────────────────────────────────────────
     def _setup_menu_bar(self):
         menubar = self.menuBar()
+
+        # Logo + brand in menu bar corner
+        from pathlib import Path
+        logo_widget = QWidget()
+        logo_layout = QHBoxLayout(logo_widget)
+        logo_layout.setContentsMargins(8, 0, 12, 0)
+        logo_layout.setSpacing(6)
+        icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
+        if icon_path.exists():
+            icon_label = QLabel()
+            pixmap = QPixmap(str(icon_path)).scaled(
+                20, 20, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            icon_label.setPixmap(pixmap)
+            logo_layout.addWidget(icon_label)
+        brand_label = QLabel(APP_NAME.upper())
+        brand_label.setFont(QFont(Fonts.SANS, Fonts.SIZE_SMALL, QFont.Weight.Bold))
+        brand_label.setStyleSheet(f"color: {Colors.ACCENT}; letter-spacing: 3px;")
+        logo_layout.addWidget(brand_label)
+        menubar.setCornerWidget(logo_widget, Qt.Corner.TopLeftCorner)
 
         # File
         file_menu = menubar.addMenu("&File")
