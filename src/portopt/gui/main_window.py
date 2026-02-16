@@ -501,8 +501,18 @@ class MainWindow(QMainWindow):
         """Handle CSV file imported from the Fidelity dialog."""
         try:
             portfolio = parse_fidelity_csv(path)
+            if not portfolio.holdings:
+                msg = "CSV parsed but no holdings found. Check the file format."
+                self.console_panel.log_warning(msg)
+                if hasattr(self, '_fid_dialog') and self._fid_dialog.isVisible():
+                    self._fid_dialog.show_error(msg)
+                return
+
             self._portfolio = portfolio
             self.portfolio_panel.set_portfolio(portfolio)
+            # Raise portfolio panel to front (it may be tabbed behind another panel)
+            self.portfolio_panel.show()
+            self.portfolio_panel.raise_()
             self.set_fidelity_status(True)
             self.console_panel.log_success(
                 f"Imported Fidelity CSV: {len(portfolio.holdings)} positions, "
@@ -518,10 +528,11 @@ class MainWindow(QMainWindow):
                 })
             if items:
                 self.ticker_bar.set_items(items)
-            # Close dialog on success
+            # Show success in dialog
             if hasattr(self, '_fid_dialog') and self._fid_dialog.isVisible():
                 self._fid_dialog.show_success(f"{len(portfolio.holdings)} positions loaded from CSV")
         except Exception as e:
+            logger.exception("Fidelity CSV import failed")
             self.console_panel.log_error(f"Fidelity CSV import failed: {e}")
             if hasattr(self, '_fid_dialog') and self._fid_dialog.isVisible():
                 self._fid_dialog.show_error(f"CSV import failed: {e}")
@@ -600,6 +611,8 @@ class MainWindow(QMainWindow):
 
             self._portfolio = portfolio
             self.portfolio_panel.set_portfolio(portfolio)
+            self.portfolio_panel.show()
+            self.portfolio_panel.raise_()
         except Exception as e:
             self.console_panel.log_error(f"CSV import failed: {e}")
 

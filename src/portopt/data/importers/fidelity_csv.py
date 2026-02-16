@@ -80,7 +80,7 @@ def parse_fidelity_csv(file_path: str | Path) -> Portfolio:
         norm_row = {k.strip().lower().replace(" ", "_"): v.strip() if v else "" for k, v in row.items() if k}
 
         symbol = norm_row.get("symbol", "").strip().upper()
-        if not symbol or symbol in ("CASH", "PENDING", "SPAXX**", "FCASH**"):
+        if not symbol or symbol in ("CASH", "PENDING", "SPAXX**", "FCASH**", "FDRXX**", "FZFXX**", "CORE**"):
             continue
 
         # Account info

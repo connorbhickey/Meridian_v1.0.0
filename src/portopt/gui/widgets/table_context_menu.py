@@ -11,6 +11,7 @@ import io
 import logging
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QMenu, QTableWidget,
 )
@@ -35,6 +36,10 @@ def setup_table_context_menu(
     table.customContextMenuRequested.connect(
         lambda pos: _show_menu(table, pos, extra_actions or [])
     )
+
+    # Ctrl+C to copy selected cell(s)
+    copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, table)
+    copy_shortcut.activated.connect(lambda: _copy_selection(table))
 
 
 def _show_menu(
@@ -81,6 +86,29 @@ def _show_menu(
             action.triggered.connect(callback)
 
     menu.exec(table.viewport().mapToGlobal(pos))
+
+
+def _copy_selection(table: QTableWidget):
+    """Copy selected cells to clipboard (handles Ctrl+C)."""
+    selection = table.selectedIndexes()
+    if not selection:
+        # Fall back to current cell
+        item = table.currentItem()
+        if item:
+            QApplication.clipboard().setText(item.text())
+        return
+
+    # Build tab-separated text from selection
+    rows = sorted(set(idx.row() for idx in selection))
+    cols = sorted(set(idx.column() for idx in selection))
+    lines = []
+    for r in rows:
+        row_vals = []
+        for c in cols:
+            item = table.item(r, c)
+            row_vals.append(item.text() if item else "")
+        lines.append("\t".join(row_vals))
+    QApplication.clipboard().setText("\n".join(lines))
 
 
 def _copy_cell(table: QTableWidget):

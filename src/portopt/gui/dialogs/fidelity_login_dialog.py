@@ -332,9 +332,15 @@ class FidelityLoginDialog(QDialog):
 
     # ── Actions ──────────────────────────────────────────────────────
     def _on_import_csv(self):
+        # Default to project CSV folder, then user Downloads
+        from pathlib import Path
+        import os
+        csv_dir = Path(__file__).resolve().parents[4] / "CSV"
+        if not csv_dir.is_dir():
+            csv_dir = Path(os.path.expanduser("~/Downloads"))
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Fidelity Positions CSV",
-            "", "CSV Files (*.csv);;All Files (*)",
+            str(csv_dir), "CSV Files (*.csv);;All Files (*)",
         )
         if path:
             self.csv_imported.emit(path)
