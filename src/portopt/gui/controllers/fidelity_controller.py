@@ -38,7 +38,8 @@ class FidelityController(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._importer = FidelityAutoImporter()
+        # headless=False so user can see the browser during login/2FA for debugging
+        self._importer = FidelityAutoImporter(headless=False)
         self._cache = CacheDB()
         self._worker = None  # Keep reference to prevent GC
 
@@ -132,7 +133,7 @@ class FidelityController(QObject):
         self.status_changed.emit("Verifying 2FA...")
         self._worker = run_in_thread(
             self._importer.complete_2fa,
-            code, True,
+            code, False,
             on_result=self._on_2fa_result,
             on_error=self._on_connect_error,
         )

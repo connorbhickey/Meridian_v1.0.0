@@ -33,11 +33,12 @@ class FidelityAutoImporter:
     After first-time login + 2FA, subsequent launches reuse the saved session.
     """
 
-    def __init__(self, state_dir: Path | None = None):
+    def __init__(self, state_dir: Path | None = None, headless: bool = True):
         self._state_dir = state_dir or get_fidelity_state_dir()
         self._state_dir.mkdir(parents=True, exist_ok=True)
         self._fidelity = None
         self._logged_in = False
+        self._headless = headless
 
     @property
     def has_saved_session(self) -> bool:
@@ -56,16 +57,24 @@ class FidelityAutoImporter:
                 "Run 'python -m playwright install firefox' or use the setup wizard."
             )
 
-    def _create_automation(self):
+    def _create_automation(self, headless: bool = True):
         """Create a new FidelityAutomation instance with persistent profile.
 
         Bug fix: profile_path must be a DIRECTORY — the library appends
         'Fidelity.json' to it internally.
         """
+        # Close any existing browser first to avoid orphaned processes
+        if self._fidelity:
+            try:
+                self._fidelity.close_browser()
+            except Exception:
+                pass
+            self._fidelity = None
+
         self._check_playwright()
         from fidelity.fidelity import FidelityAutomation
         self._fidelity = FidelityAutomation(
-            headless=True,
+            headless=headless if headless is not None else self._headless,
             save_state=True,
             profile_path=str(self._state_dir),
         )
@@ -90,7 +99,7 @@ class FidelityAutoImporter:
                 username=username,
                 password=password,
                 totp_secret=totp_secret,
-                save_device=True,
+                save_device=False,
             )
 
             if lib_success and lib_logged_in:
@@ -167,7 +176,12 @@ class FidelityAutoImporter:
 
         try:
             # Fetch account info (populates account_dict)
-            self._fidelity.getAccountInfo()
+            result = self._fidelity.getAccountInfo()
+            if result is None:
+                raise RuntimeError(
+                    "Failed to fetch account info from Fidelity. "
+                    "The session may have expired — try disconnecting and logging in again."
+                )
             account_dict = self._fidelity.account_dict
 
             holdings = []
