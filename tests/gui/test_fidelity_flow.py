@@ -232,8 +232,16 @@ class TestFidelityController:
 
         signals = []
         ctrl.playwright_missing.connect(lambda: signals.append(True))
+        # Only our specific exception name should trigger the signal
         ctrl._on_connect_error("PlaywrightNotInstalledError: Firefox not installed")
         assert len(signals) == 1
+
+        # Generic playwright errors should NOT trigger playwright_missing
+        error_signals = []
+        ctrl.connection_error.connect(lambda msg: error_signals.append(msg))
+        ctrl._on_connect_error("playwright._impl._errors.TimeoutError: Timeout 60000ms exceeded")
+        assert len(signals) == 1  # unchanged — was not caught as playwright_missing
+        assert len(error_signals) == 1  # routed to normal error instead
 
     @patch("portopt.gui.controllers.fidelity_controller.CacheDB")
     @patch("portopt.gui.controllers.fidelity_controller.FidelityAutoImporter")

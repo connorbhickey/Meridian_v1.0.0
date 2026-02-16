@@ -257,8 +257,8 @@ class FidelityController(QObject):
             return None
 
     def _on_connect_error(self, error_msg: str):
-        # Check for Playwright not installed
-        if "PlaywrightNotInstalledError" in error_msg or "playwright" in error_msg.lower():
+        # Check specifically for our custom exception
+        if "PlaywrightNotInstalledError" in error_msg:
             logger.warning("Playwright Firefox not installed")
             self.status_changed.emit("Playwright Firefox not installed")
             self.playwright_missing.emit()
