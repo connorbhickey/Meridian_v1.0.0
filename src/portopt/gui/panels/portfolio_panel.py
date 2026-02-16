@@ -41,10 +41,12 @@ class PortfolioPanel(BasePanel):
         self._total_label = QLabel("$0.00")
         self._total_label.setFont(QFont(Fonts.MONO, Fonts.SIZE_LARGE, QFont.Weight.Bold))
         self._total_label.setStyleSheet(f"color: {Colors.ACCENT};")
+        self._total_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         header_layout.addWidget(self._total_label)
 
         self._pnl_label = QLabel("")
         self._pnl_label.setFont(QFont(Fonts.MONO, Fonts.SIZE_NORMAL))
+        self._pnl_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         header_layout.addWidget(self._pnl_label)
 
         self._layout.addWidget(header)

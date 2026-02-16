@@ -107,6 +107,7 @@ class MetricsPanel(BasePanel):
             f"font-size: 13px; font-weight: bold; border: none;"
         )
         val.setAlignment(Qt.AlignLeft)
+        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         vlayout.addWidget(val)
 
         self._cells[key] = (lbl, val)

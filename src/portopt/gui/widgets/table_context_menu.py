@@ -36,6 +36,7 @@ def setup_table_context_menu(
     table.customContextMenuRequested.connect(
         lambda pos: _show_menu(table, pos, extra_actions or [])
     )
+    table.setToolTip("Right-click or Ctrl+C to copy")
 
     # Ctrl+C to copy selected cell(s)
     copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, table)

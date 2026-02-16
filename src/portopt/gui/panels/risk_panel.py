@@ -163,6 +163,7 @@ class RiskPanel(BasePanel):
             f"color: {Colors.LOSS}; font-family: {Fonts.MONO}; "
             f"font-size: 14px; font-weight: bold; border: none;"
         )
+        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         vlayout.addWidget(val)
 
         self._gauges[key] = val

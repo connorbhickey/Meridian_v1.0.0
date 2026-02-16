@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from portopt.constants import Colors, Fonts, OptMethod
 from portopt.data.models import OptimizationResult
 from portopt.gui.panels.base_panel import BasePanel
+from portopt.gui.widgets.table_context_menu import setup_table_context_menu
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,7 @@ class ScenarioPanel(BasePanel):
                 font-weight: bold;
             }}
         """)
+        setup_table_context_menu(self._table)
         splitter.addWidget(self._table)
         splitter.setSizes([200, 300])
 

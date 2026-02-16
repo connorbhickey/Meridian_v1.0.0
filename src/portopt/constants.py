@@ -199,4 +199,5 @@ class PanelID(Enum):
     RISK = "risk"
     COMPARISON = "comparison"
     SCENARIO = "scenario"
+    STRATEGY_LAB = "strategy_lab"
     CONSOLE = "console"

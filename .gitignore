@@ -37,6 +37,11 @@ Thumbs.db
 # Node / Electron
 node_modules/
 package-lock.json
+electron/
+
+# Misc
+nul
+CSV/
 
 # Logs
 *.log

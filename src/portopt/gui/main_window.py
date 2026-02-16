@@ -31,6 +31,7 @@ from portopt.gui.panels.trade_blotter_panel import TradeBlotterPanel
 from portopt.gui.panels.risk_panel import RiskPanel
 from portopt.gui.panels.comparison_panel import ComparisonPanel
 from portopt.gui.panels.scenario_panel import ScenarioPanel
+from portopt.gui.panels.strategy_lab_panel import StrategyLabPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.data_controller import DataController
@@ -83,7 +84,7 @@ class MainWindow(QMainWindow):
         self._setup_menu_bar()
         self._setup_status_bar()
         self._setup_logging()
-        self._setup_default_layout()
+        self._setup_focus_layout()
 
         # Restore window geometry
         geo = self._settings.value("window/geometry")
@@ -95,7 +96,7 @@ class MainWindow(QMainWindow):
 
         # Try restoring last session layout
         if not self.dock_manager.restore_session():
-            self._setup_default_layout()
+            self._setup_focus_layout()
 
         # Startup: try auto-connect to Fidelity after window is shown
         QTimer.singleShot(500, self._on_startup)
@@ -171,6 +172,7 @@ class MainWindow(QMainWindow):
         self.comparison_panel = ComparisonPanel(self)
         self.scenario_panel = ScenarioPanel(self)
         self.console_panel = ConsolePanel(self)
+        self.strategy_lab_panel = StrategyLabPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -178,7 +180,7 @@ class MainWindow(QMainWindow):
             self.frontier_panel, self.backtest_panel, self.metrics_panel,
             self.attribution_panel, self.network_panel, self.dendrogram_panel,
             self.trade_blotter_panel, self.risk_panel, self.comparison_panel,
-            self.scenario_panel, self.console_panel,
+            self.scenario_panel, self.strategy_lab_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -243,6 +245,14 @@ class MainWindow(QMainWindow):
         self.bt_controller.running_changed.connect(
             lambda running: self._start_elapsed() if running else self._stop_elapsed()
         )
+
+        # Strategy Lab: own controllers (isolated from main portfolio)
+        self._lab_opt_controller = OptimizationController(self.data_controller, self)
+        self._lab_bt_controller = BacktestController(self.data_controller, self)
+        self.strategy_lab_panel.set_controllers(
+            self.data_controller, self._lab_opt_controller, self._lab_bt_controller,
+        )
+        self.strategy_lab_panel.import_portfolio_requested.connect(self._on_lab_import)
 
         # Panel signals
         self.portfolio_panel.connect_requested.connect(self._show_fidelity_login)
@@ -628,9 +638,36 @@ class MainWindow(QMainWindow):
                 return syms
         return []
 
+    def _on_lab_import(self):
+        """Import current portfolio holdings into the Strategy Lab."""
+        if self._portfolio and self._portfolio.holdings:
+            self.strategy_lab_panel.import_holdings(self._portfolio.holdings)
+            self.console_panel.log_info(
+                f"Imported {len(self._portfolio.holdings)} positions into Strategy Lab"
+            )
+        else:
+            self.console_panel.log_warning("No portfolio loaded. Import a CSV first.")
+
     # ── Layout ───────────────────────────────────────────────────────
-    def _setup_default_layout(self):
-        """Arrange panels in the default trading terminal layout."""
+    def _setup_focus_layout(self):
+        """Clean 3-panel Focus layout: Portfolio | Strategy Lab | Console."""
+        for panel in self.panels.values():
+            self.removeDockWidget(panel)
+            panel.hide()
+
+        # Top row: Portfolio (left) | Strategy Lab (right)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.portfolio_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.strategy_lab_panel)
+
+        # Bottom: Console
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
+
+        self.portfolio_panel.show()
+        self.strategy_lab_panel.show()
+        self.console_panel.show()
+
+    def _setup_full_layout(self):
+        """Full 17-panel trading terminal layout (all panels visible)."""
         for panel in self.panels.values():
             self.removeDockWidget(panel)
 
@@ -665,7 +702,13 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.portfolio_panel, self.watchlist_panel)
         self.tabifyDockWidget(self.portfolio_panel, self.attribution_panel)
         self.tabifyDockWidget(self.portfolio_panel, self.trade_blotter_panel)
+        self.tabifyDockWidget(self.portfolio_panel, self.strategy_lab_panel)
         self.portfolio_panel.raise_()
+
+        # Comparison & Scenario tabbed with correlation
+        self.tabifyDockWidget(self.correlation_panel, self.comparison_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.scenario_panel)
+        self.correlation_panel.raise_()
 
         # Bottom: Console
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
@@ -712,8 +755,12 @@ class MainWindow(QMainWindow):
         for panel in self.panels.values():
             panels_menu.addAction(panel.toggleViewAction())
         view_menu.addSeparator()
+        view_menu.addAction(self._action("Strategy &Lab", "Ctrl+L", self._show_strategy_lab))
+        view_menu.addSeparator()
         layout_menu = view_menu.addMenu("&Layouts")
-        layout_menu.addAction(self._action("Default Layout", callback=self._setup_default_layout))
+        layout_menu.addAction(self._action("Focus (default)", callback=self._setup_focus_layout))
+        layout_menu.addAction(self._action("Full (all panels)", callback=self._setup_full_layout))
+        layout_menu.addSeparator()
         layout_menu.addAction(self._action("Save/Load Layout...", "Ctrl+Shift+L", self._show_layout_manager))
 
         # Data
@@ -755,6 +802,11 @@ class MainWindow(QMainWindow):
             action.triggered.connect(callback)
         return action
 
+    def _show_strategy_lab(self):
+        """Show and raise the Strategy Lab panel."""
+        self.strategy_lab_panel.show()
+        self.strategy_lab_panel.raise_()
+
     def _show_about(self):
         QMessageBox.about(
             self, f"About {APP_NAME}",
@@ -766,6 +818,7 @@ class MainWindow(QMainWindow):
             f"Ctrl+O — Run Optimization<br>"
             f"Ctrl+B — Run Backtest<br>"
             f"Ctrl+I — Import CSV<br>"
+            f"Ctrl+L — Strategy Lab<br>"
             f"Ctrl+F — Fidelity Connection<br>"
             f"F5 — Refresh Positions<br>"
             f"Ctrl+Q — Exit"
