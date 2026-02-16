@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "portopt"
+version = "0.1.0"
+description = "Portfolio Optimization & Backtesting Terminal"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6>=6.7",
+    "pyqtgraph>=0.13",
+    "qdarkstyle>=3.2",
+    "matplotlib>=3.9",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "scipy>=1.14",
+    "scikit-learn>=1.5",
+    "cvxpy>=1.5",
+    "yfinance>=0.2",
+    "alpha-vantage>=3.0",
+    "fidelity-api>=0.1",
+    "playwright>=1.40",
+    "keyring>=25.0",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "networkx>=3.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+]
+
+[project.scripts]
+portopt = "portopt.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
