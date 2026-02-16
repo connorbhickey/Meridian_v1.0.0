@@ -2,7 +2,7 @@
 
 import sys
 
-from PySide6.QtCore import QObject, QEvent, Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication, QLabel
 from PySide6.QtGui import QFont
 
@@ -11,20 +11,12 @@ from portopt.gui.theme import apply_theme
 from portopt.gui.main_window import MainWindow
 
 
-class _LabelSelectableFilter(QObject):
-    """Event filter that makes all QLabel widgets text-selectable by mouse.
-
-    Installed on QApplication so it sees every widget's Polish event (fired
-    once when the widget is first styled). This avoids manually setting the
-    flag on every label across the entire codebase.
-    """
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.Polish and isinstance(obj, QLabel):
-            obj.setTextInteractionFlags(
-                obj.textInteractionFlags() | Qt.TextInteractionFlag.TextSelectableByMouse
-            )
-        return False
+def _make_labels_selectable(root):
+    """Walk all QLabel children of root and make them text-selectable."""
+    for label in root.findChildren(QLabel):
+        label.setTextInteractionFlags(
+            label.textInteractionFlags() | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
 
 
 def main():
@@ -36,16 +28,19 @@ def main():
     font = QFont(Fonts.SANS, Fonts.SIZE_NORMAL)
     app.setFont(font)
 
-    # Make all QLabel text selectable/copyable
-    label_filter = _LabelSelectableFilter(app)
-    app.installEventFilter(label_filter)
-
     # Apply Meridian deep-space theme
     apply_theme(app)
 
     # Launch main window
     window = MainWindow()
     window.show()
+
+    # Make all QLabel text selectable/copyable after UI is fully constructed.
+    # Run once at startup and periodically to catch dynamically created labels.
+    _make_labels_selectable(window)
+    _label_timer = QTimer(window)
+    _label_timer.timeout.connect(lambda: _make_labels_selectable(window))
+    _label_timer.start(2000)  # Re-scan every 2 seconds for new labels
 
     sys.exit(app.exec())
 
