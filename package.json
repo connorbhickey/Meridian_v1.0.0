@@ -1,0 +1,51 @@
+{
+  "name": "meridian",
+  "version": "1.0.0",
+  "description": "Meridian — Quantitative Portfolio Terminal",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder"
+  },
+  "author": "Connor Hickey",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.meridian.portfolio",
+    "productName": "Meridian",
+    "directories": {
+      "output": "dist/electron"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "pyproject.toml"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icons/meridian.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Meridian",
+      "installerIcon": "electron/icons/meridian.ico",
+      "uninstallerIcon": "electron/icons/meridian.ico",
+      "installerHeaderIcon": "electron/icons/meridian.ico"
+    },
+    "extraResources": [
+      {
+        "from": "src/",
+        "to": "src/",
+        "filter": ["**/*"]
+      }
+    ]
+  }
+}
