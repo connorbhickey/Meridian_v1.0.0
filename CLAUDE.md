@@ -87,6 +87,13 @@ python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 - `pytest-qt` must be installed separately (`pip install pytest-qt`).
 - Test fixtures are in `tests/conftest.py`.
 
+## Enhancement Plan
+
+See `ENHANCEMENT_PLAN.md` for the full 8-phase roadmap. Current focus:
+- **Phase 1**: Polish & bug fixes (Holding.weight, controller error handling, console logging, panel completion, keyboard shortcuts)
+- **Phase 5**: AI agent integration (Copilot panel, report generation)
+- **Phase 3**: Engine enhancements (Monte Carlo, factor models, regime detection)
+
 ## Tech Stack
 
 - Python 3.14+, PySide6 6.10+, pyqtgraph, numpy, pandas, scipy
