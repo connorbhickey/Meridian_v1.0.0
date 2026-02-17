@@ -70,11 +70,12 @@ class StrategyLabPanel(BasePanel):
         self._data_controller = None
         self._build_ui()
 
-    def set_controllers(self, data_controller, opt_controller, bt_controller):
+    def set_controllers(self, data_controller, opt_controller, bt_controller, console=None):
         """Set the lab's own controller instances (created by MainWindow)."""
         self._data_controller = data_controller
         self._opt_controller = opt_controller
         self._bt_controller = bt_controller
+        self._console = console
 
         # Wire optimization signals
         self._opt_controller.optimization_complete.connect(self._on_optimization_complete)
@@ -556,6 +557,8 @@ class StrategyLabPanel(BasePanel):
             self._result_table.setItem(i, 1, cur_item)
 
             opt = opt_weights.get(sym, 0.0) * 100
+            if abs(opt) < 0.05:
+                opt = 0.0
             opt_item = QTableWidgetItem(f"{opt:.1f}%")
             opt_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             if opt > 0.1:
@@ -563,9 +566,13 @@ class StrategyLabPanel(BasePanel):
                 opt_item.setForeground(QColor(Colors.ACCENT))
             self._result_table.setItem(i, 2, opt_item)
 
-        self._status_label.setText(
-            f"Optimization complete: {result.method} | Sharpe={result.sharpe_ratio:.3f}"
+        msg = f"Optimization complete: {result.method} | Sharpe={result.sharpe_ratio:.3f}"
+        self._status_label.setText(msg)
+        self._status_label.setStyleSheet(
+            f"color: {Colors.PROFIT}; font-size: {Fonts.SIZE_SMALL}pt;"
         )
+        if self._console:
+            self._console.log_success(f"Lab: {msg}")
 
     # ── Backtest ─────────────────────────────────────────────────────
 
@@ -651,17 +658,29 @@ class StrategyLabPanel(BasePanel):
             )
 
         self._status_label.setText("Backtest complete")
+        self._status_label.setStyleSheet(
+            f"color: {Colors.PROFIT}; font-size: {Fonts.SIZE_SMALL}pt;"
+        )
+        if self._console:
+            self._console.log_success("Lab: Backtest complete")
 
     # ── Callbacks ────────────────────────────────────────────────────
 
     def _on_status(self, msg: str):
         self._status_label.setText(msg)
+        self._status_label.setStyleSheet(
+            f"color: {Colors.TEXT_MUTED}; font-size: {Fonts.SIZE_SMALL}pt;"
+        )
+        if self._console:
+            self._console.log_info(f"Lab: {msg}")
 
     def _on_error(self, msg: str):
         self._status_label.setText(f"Error: {msg}")
         self._status_label.setStyleSheet(
             f"color: {Colors.LOSS}; font-size: {Fonts.SIZE_SMALL}pt;"
         )
+        if self._console:
+            self._console.log_error(f"Lab: {msg}")
 
     # ── Styles ───────────────────────────────────────────────────────
 

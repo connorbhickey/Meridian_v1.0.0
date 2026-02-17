@@ -353,10 +353,14 @@ class OptimizationController(QObject):
         # Build close-price DataFrame
         frames = {}
         for sym, df in prices_dict.items():
-            if not df.empty and "Close" in df.columns:
-                frames[sym] = df["Close"]
-            elif not df.empty and "Adj Close" in df.columns:
-                frames[sym] = df["Adj Close"]
+            if df.empty:
+                continue
+            # Handle both title-case and lowercase column names (cache stores lowercase)
+            col_map = {c.lower(): c for c in df.columns}
+            if "close" in col_map:
+                frames[sym] = df[col_map["close"]]
+            elif "adj close" in col_map:
+                frames[sym] = df[col_map["adj close"]]
 
         if not frames:
             self.error.emit("No price data retrieved for any symbol")

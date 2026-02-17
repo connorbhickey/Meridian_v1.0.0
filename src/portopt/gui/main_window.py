@@ -251,6 +251,7 @@ class MainWindow(QMainWindow):
         self._lab_bt_controller = BacktestController(self.data_controller, self)
         self.strategy_lab_panel.set_controllers(
             self.data_controller, self._lab_opt_controller, self._lab_bt_controller,
+            console=self.console_panel,
         )
         self.strategy_lab_panel.import_portfolio_requested.connect(self._on_lab_import)
 
@@ -650,21 +651,17 @@ class MainWindow(QMainWindow):
 
     # ── Layout ───────────────────────────────────────────────────────
     def _setup_focus_layout(self):
-        """Clean 3-panel Focus layout: Portfolio | Strategy Lab | Console."""
+        """Clean 2-panel Focus layout: Portfolio | Strategy Lab."""
         for panel in self.panels.values():
             self.removeDockWidget(panel)
             panel.hide()
 
-        # Top row: Portfolio (left) | Strategy Lab (right)
+        # Portfolio (left) | Strategy Lab (right)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.portfolio_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.strategy_lab_panel)
 
-        # Bottom: Console
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
-
         self.portfolio_panel.show()
         self.strategy_lab_panel.show()
-        self.console_panel.show()
 
     def _setup_full_layout(self):
         """Full 17-panel trading terminal layout (all panels visible)."""
@@ -757,11 +754,11 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self._action("Strategy &Lab", "Ctrl+L", self._show_strategy_lab))
         view_menu.addSeparator()
-        layout_menu = view_menu.addMenu("&Layouts")
-        layout_menu.addAction(self._action("Focus (default)", callback=self._setup_focus_layout))
-        layout_menu.addAction(self._action("Full (all panels)", callback=self._setup_full_layout))
-        layout_menu.addSeparator()
-        layout_menu.addAction(self._action("Save/Load Layout...", "Ctrl+Shift+L", self._show_layout_manager))
+        view_menu.addAction(self._action("Focus View (default)", callback=self._setup_focus_layout))
+        view_menu.addAction(self._action("Full View (all panels)", callback=self._setup_full_layout))
+        view_menu.addSeparator()
+        view_menu.addAction(self._action("&Save Current View...", "Ctrl+Shift+S", self._quick_save_layout))
+        view_menu.addAction(self._action("&Manage Views...", "Ctrl+Shift+L", self._show_layout_manager))
 
         # Data
         data_menu = menubar.addMenu("&Data")
@@ -806,6 +803,16 @@ class MainWindow(QMainWindow):
         """Show and raise the Strategy Lab panel."""
         self.strategy_lab_panel.show()
         self.strategy_lab_panel.raise_()
+
+    def _quick_save_layout(self):
+        """Quick-save current panel arrangement as a named view."""
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, "Save View", "View name:",
+        )
+        if ok and name.strip():
+            self.dock_manager.save_layout(name.strip())
+            self.console_panel.log_success(f"View '{name.strip()}' saved")
 
     def _show_about(self):
         QMessageBox.about(
