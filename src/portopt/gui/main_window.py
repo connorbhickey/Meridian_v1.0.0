@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         self._setup_logging()
         self._setup_focus_layout()
 
-        # Restore window geometry
+        # Restore window geometry (with safety check for off-screen)
         geo = self._settings.value("window/geometry")
         if geo:
             self.restoreGeometry(geo)
@@ -94,12 +94,31 @@ class MainWindow(QMainWindow):
         if state:
             self.restoreState(state)
 
+        # Safety: ensure window is visible on screen
+        self._ensure_on_screen()
+
         # Try restoring last session layout
         if not self.dock_manager.restore_session():
             self._setup_focus_layout()
 
         # Startup: try auto-connect to Fidelity after window is shown
         QTimer.singleShot(500, self._on_startup)
+
+    def _ensure_on_screen(self):
+        """Reset window position if it's not visible on any screen."""
+        from PySide6.QtWidgets import QApplication
+        window_geo = self.frameGeometry()
+        visible = False
+        for screen in QApplication.screens():
+            if screen.availableGeometry().intersects(window_geo):
+                visible = True
+                break
+        if not visible:
+            self.resize(1600, 1000)
+            screen = QApplication.primaryScreen()
+            if screen:
+                center = screen.availableGeometry().center()
+                self.move(center.x() - 800, center.y() - 500)
 
     def _set_app_icon(self):
         """Set the window icon and taskbar icon."""
@@ -641,10 +660,16 @@ class MainWindow(QMainWindow):
 
     def _on_lab_import(self):
         """Import current portfolio holdings into the Strategy Lab."""
+        from portopt.data.models import AssetType
         if self._portfolio and self._portfolio.holdings:
-            self.strategy_lab_panel.import_holdings(self._portfolio.holdings)
+            # Only send tradeable positions (exclude money market / cash)
+            tradeable = [
+                h for h in self._portfolio.holdings
+                if h.asset.asset_type != AssetType.MONEY_MARKET
+            ]
+            self.strategy_lab_panel.import_holdings(tradeable)
             self.console_panel.log_info(
-                f"Imported {len(self._portfolio.holdings)} positions into Strategy Lab"
+                f"Imported {len(tradeable)} tradeable positions into Strategy Lab"
             )
         else:
             self.console_panel.log_warning("No portfolio loaded. Import a CSV first.")

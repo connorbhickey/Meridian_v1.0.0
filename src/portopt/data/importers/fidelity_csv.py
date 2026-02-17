@@ -31,7 +31,12 @@ def _clean_numeric(value: str) -> float:
         return 0.0
 
 
+_MONEY_MARKET_SYMBOLS = {"SPAXX**", "FCASH**", "FDRXX**", "FZFXX**", "CORE**"}
+
+
 def _detect_asset_type(symbol: str, description: str) -> AssetType:
+    if symbol in _MONEY_MARKET_SYMBOLS:
+        return AssetType.MONEY_MARKET
     desc_lower = description.lower()
     if "etf" in desc_lower:
         return AssetType.ETF
@@ -80,7 +85,7 @@ def parse_fidelity_csv(file_path: str | Path) -> Portfolio:
         norm_row = {k.strip().lower().replace(" ", "_"): v.strip() if v else "" for k, v in row.items() if k}
 
         symbol = norm_row.get("symbol", "").strip().upper()
-        if not symbol or symbol in ("CASH", "PENDING", "SPAXX**", "FCASH**", "FDRXX**", "FZFXX**", "CORE**"):
+        if not symbol or symbol in ("CASH", "PENDING"):
             continue
 
         # Account info

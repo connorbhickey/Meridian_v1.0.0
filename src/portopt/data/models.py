@@ -15,6 +15,7 @@ class AssetType(Enum):
     BOND = auto()
     OPTION = auto()
     CRYPTO = auto()
+    MONEY_MARKET = auto()
     OTHER = auto()
 
 
@@ -106,7 +107,11 @@ class Portfolio:
 
     @property
     def symbols(self) -> list[str]:
-        return [h.asset.symbol for h in self.holdings]
+        """Tradeable symbols only (excludes money market / cash positions)."""
+        return [
+            h.asset.symbol for h in self.holdings
+            if h.asset.asset_type != AssetType.MONEY_MARKET
+        ]
 
     @property
     def weights(self) -> dict[str, float]:
