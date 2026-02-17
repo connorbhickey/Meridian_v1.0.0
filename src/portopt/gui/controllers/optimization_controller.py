@@ -32,7 +32,7 @@ class OptimizationController(QObject):
 
     # Signals
     optimization_complete = Signal(object)     # OptimizationResult
-    frontier_complete = Signal(object, object)  # risks array, returns array
+    frontier_complete = Signal(object, object, object)  # risks, returns, weights_list
     frontier_assets = Signal(list, object, object)  # symbols, risks, returns
     metrics_ready = Signal(dict)               # metrics dict
     risk_metrics_ready = Signal(dict)          # risk-specific metrics
@@ -226,6 +226,7 @@ class OptimizationController(QObject):
         self.progress.emit("Computing efficient frontier...")
         frontier_risks = None
         frontier_returns = None
+        frontier_weights = None
         if method not in (OptMethod.HRP, OptMethod.HERC):
             try:
                 frontier_opt = MeanVarianceOptimizer(
@@ -235,6 +236,7 @@ class OptimizationController(QObject):
                 frontier_points = frontier_opt.efficient_frontier(n_points=50)
                 frontier_risks = np.array([p.volatility for p in frontier_points])
                 frontier_returns = np.array([p.expected_return for p in frontier_points])
+                frontier_weights = [dict(p.weights) for p in frontier_points]
             except Exception as e:
                 logger.warning("Frontier computation failed: %s", e)
 
@@ -260,6 +262,7 @@ class OptimizationController(QObject):
             "result": result,
             "frontier_risks": frontier_risks,
             "frontier_returns": frontier_returns,
+            "frontier_weights": frontier_weights,
             "symbols": symbols,
             "asset_vols": asset_vols,
             "asset_mus": asset_mus,
@@ -290,7 +293,11 @@ class OptimizationController(QObject):
 
         # Frontier
         if output.get("frontier_risks") is not None:
-            self.frontier_complete.emit(output["frontier_risks"], output["frontier_returns"])
+            self.frontier_complete.emit(
+                output["frontier_risks"],
+                output["frontier_returns"],
+                output.get("frontier_weights"),
+            )
 
         # Per-asset
         symbols = output["symbols"]

@@ -139,6 +139,12 @@ class ReturnEstimator(Enum):
     EXPONENTIAL = auto()
 
 
+# ── Monte Carlo Simulation Methods ──────────────────────────────────
+class MCSimMethod(Enum):
+    PARAMETRIC = auto()       # GBM from estimated mu/Sigma
+    BOOTSTRAP = auto()        # Block bootstrap from historical returns
+
+
 # ── Linkage Methods ──────────────────────────────────────────────────
 class LinkageMethod(Enum):
     SINGLE = "single"
@@ -201,3 +207,6 @@ class PanelID(Enum):
     SCENARIO = "scenario"
     STRATEGY_LAB = "strategy_lab"
     CONSOLE = "console"
+    MONTE_CARLO = "monte_carlo"
+    STRESS_TEST = "stress_test"
+    ROLLING_ANALYTICS = "rolling_analytics"

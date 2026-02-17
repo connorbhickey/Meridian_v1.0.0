@@ -32,11 +32,15 @@ from portopt.gui.panels.risk_panel import RiskPanel
 from portopt.gui.panels.comparison_panel import ComparisonPanel
 from portopt.gui.panels.scenario_panel import ScenarioPanel
 from portopt.gui.panels.strategy_lab_panel import StrategyLabPanel
+from portopt.gui.panels.monte_carlo_panel import MonteCarloPanel
+from portopt.gui.panels.stress_test_panel import StressTestPanel
+from portopt.gui.panels.rolling_panel import RollingAnalyticsPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.data_controller import DataController
 from portopt.gui.controllers.optimization_controller import OptimizationController
 from portopt.gui.controllers.backtest_controller import BacktestController
+from portopt.gui.controllers.monte_carlo_controller import MonteCarloController
 from portopt.gui.dialogs.fidelity_login_dialog import FidelityLoginDialog
 from portopt.gui.dialogs.bl_views_dialog import BLViewsDialog
 from portopt.gui.dialogs.constraint_dialog import ConstraintDialog
@@ -192,6 +196,9 @@ class MainWindow(QMainWindow):
         self.scenario_panel = ScenarioPanel(self)
         self.console_panel = ConsolePanel(self)
         self.strategy_lab_panel = StrategyLabPanel(self)
+        self.monte_carlo_panel = MonteCarloPanel(self)
+        self.stress_test_panel = StressTestPanel(self)
+        self.rolling_panel = RollingAnalyticsPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -199,7 +206,8 @@ class MainWindow(QMainWindow):
             self.frontier_panel, self.backtest_panel, self.metrics_panel,
             self.attribution_panel, self.network_panel, self.dendrogram_panel,
             self.trade_blotter_panel, self.risk_panel, self.comparison_panel,
-            self.scenario_panel, self.strategy_lab_panel, self.console_panel,
+            self.scenario_panel, self.strategy_lab_panel, self.monte_carlo_panel,
+            self.stress_test_panel, self.rolling_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -259,11 +267,34 @@ class MainWindow(QMainWindow):
         self.bt_controller.error.connect(
             lambda msg: self.console_panel.log_error(f"Backtest error: {msg}")
         )
+        self.bt_controller.benchmark_curve_ready.connect(self._on_benchmark_curve)
+        self.bt_controller.benchmark_metrics_ready.connect(self._on_benchmark_metrics)
         # B1: Wire progress + running signals to status bar
         self.bt_controller.progress.connect(lambda msg: self._op_status.setText(msg))
         self.bt_controller.running_changed.connect(
             lambda running: self._start_elapsed() if running else self._stop_elapsed()
         )
+
+        # Monte Carlo controller
+        self.mc_controller = MonteCarloController(self)
+        self.mc_controller.simulation_complete.connect(self._on_mc_complete)
+        self.mc_controller.status_changed.connect(
+            lambda msg: self.console_panel.log_info(f"MC: {msg}")
+        )
+        self.mc_controller.error.connect(
+            lambda msg: self.console_panel.log_error(f"MC error: {msg}")
+        )
+        self.mc_controller.progress.connect(lambda msg: self._op_status.setText(msg))
+        self.mc_controller.running_changed.connect(
+            lambda running: self._start_elapsed() if running else self._stop_elapsed()
+        )
+        self.monte_carlo_panel.run_requested.connect(self._run_mc)
+
+        # Stress test panel
+        self.stress_test_panel.run_requested.connect(self._run_stress_test)
+
+        # Rolling analytics panel
+        self.rolling_panel.compute_requested.connect(self._run_rolling)
 
         # Strategy Lab: own controllers (isolated from main portfolio)
         self._lab_opt_controller = OptimizationController(self.data_controller, self)
@@ -347,6 +378,17 @@ class MainWindow(QMainWindow):
         # Feed price chart with the price data used for optimization
         self._update_price_chart(self.opt_controller._prices)
 
+        # Feed Monte Carlo controller with optimization data
+        if self.opt_controller._prices is not None:
+            self.mc_controller.set_prices(self.opt_controller._prices)
+            self.mc_controller.set_weights(result.weights)
+
+        # Feed stress test panel with portfolio weights
+        self.stress_test_panel.set_weights(result.weights)
+
+        # Feed rolling analytics panel with symbols
+        self.rolling_panel.set_symbols(list(result.weights.keys()))
+
         # Store last result for comparison save
         self._last_opt_result = result
 
@@ -365,9 +407,28 @@ class MainWindow(QMainWindow):
         self.comparison_panel.add_snapshot(result, name)
         self.console_panel.log_info(f"Saved '{name}' to comparison panel.")
 
-    def _on_frontier_complete(self, risks, returns):
+    # ── Monte Carlo Flow ─────────────────────────────────────────────
+    def _run_mc(self, config):
+        """Handle Monte Carlo run from panel."""
+        if not self.mc_controller.is_ready:
+            self.console_panel.log_warning("Run optimization first to provide data for Monte Carlo.")
+            return
+        self.monte_carlo_panel.set_running(True)
+        self.console_panel.log_info(f"Running Monte Carlo: {config.n_sims} sims, {config.horizon_days} days...")
+        self.mc_controller.run_simulation(config)
+
+    def _on_mc_complete(self, result):
+        """Handle Monte Carlo simulation result."""
+        self.monte_carlo_panel.set_running(False)
+        self.monte_carlo_panel.set_result(result)
+        self.console_panel.log_success(
+            f"Monte Carlo complete: {result.n_sims} sims | "
+            f"P(shortfall)={result.shortfall_probability:.1%}"
+        )
+
+    def _on_frontier_complete(self, risks, returns, weights_list=None):
         self.frontier_panel.clear_plot()
-        self.frontier_panel.set_frontier(risks, returns)
+        self.frontier_panel.set_frontier(risks, returns, weights_list)
 
     def _on_frontier_assets(self, symbols, vols, mus):
         self.frontier_panel.set_individual_assets(symbols, vols, mus)
@@ -406,6 +467,135 @@ class MainWindow(QMainWindow):
 
     def _on_trades(self, trades):
         self.trade_blotter_panel.set_trades(trades)
+
+    def _on_benchmark_curve(self, dates_epoch, values, label):
+        self.backtest_panel.set_benchmark(dates_epoch, values, label)
+
+    def _on_benchmark_metrics(self, port_metrics, bench_metrics):
+        self.backtest_panel.set_benchmark_metrics(port_metrics, bench_metrics)
+
+    # ── Stress Test Flow ─────────────────────────────────────────────
+    def _run_stress_test(self, config: dict):
+        """Run stress tests on current portfolio weights."""
+        from portopt.engine.stress import (
+            HISTORICAL_SCENARIOS, StressScenario,
+            run_stress_test, run_all_stress_tests,
+        )
+        from portopt.utils.threading import run_in_thread
+
+        weights = config.get("weights")
+        if not weights:
+            self.console_panel.log_warning("No portfolio weights. Run optimization first.")
+            return
+
+        self.stress_test_panel.set_running(True)
+        self.console_panel.log_info("Running stress tests...")
+
+        def _do_stress():
+            selected = config.get("selected_scenarios", list(HISTORICAL_SCENARIOS.keys()))
+            scenarios = [HISTORICAL_SCENARIOS[n] for n in selected if n in HISTORICAL_SCENARIOS]
+
+            # Add custom scenario if provided
+            custom = config.get("custom")
+            if custom:
+                scenarios.append(StressScenario(
+                    name=custom["name"],
+                    description="Custom scenario",
+                    shocks=custom["shocks"],
+                ))
+
+            # Get covariance matrix if available
+            cov = getattr(self.opt_controller, "_last_cov", None)
+
+            return run_all_stress_tests(
+                weights, scenarios=scenarios, cov=cov,
+            )
+
+        run_in_thread(
+            _do_stress,
+            on_result=self._on_stress_complete,
+            on_error=lambda msg: (
+                self.stress_test_panel.set_running(False),
+                self.console_panel.log_error(f"Stress test error: {msg}"),
+            ),
+        )
+
+    def _on_stress_complete(self, results):
+        self.stress_test_panel.set_running(False)
+        self.stress_test_panel.set_results(results)
+        worst = min(results, key=lambda r: r.portfolio_impact) if results else None
+        if worst:
+            self.console_panel.log_success(
+                f"Stress test complete: {len(results)} scenarios | "
+                f"Worst: {worst.scenario.name} ({worst.portfolio_impact:+.2%})"
+            )
+
+    # ── Rolling Analytics Flow ────────────────────────────────────────
+    def _run_rolling(self, config: dict):
+        """Run rolling metric computation on background thread."""
+        from portopt.engine.rolling import (
+            rolling_sharpe, rolling_sortino, rolling_volatility,
+            rolling_max_drawdown, rolling_beta, rolling_correlation,
+        )
+        from portopt.utils.threading import run_in_thread
+
+        prices = getattr(self.opt_controller, "_prices", None)
+        if prices is None or prices.empty:
+            self.console_panel.log_warning("No price data. Run optimization first.")
+            return
+
+        metric = config["metric"]
+        window = config["window"]
+        asset_a = config["asset_a"]
+        asset_b = config.get("asset_b")
+
+        if asset_a not in prices.columns:
+            self.console_panel.log_warning(f"Asset {asset_a} not found in price data.")
+            return
+
+        self.rolling_panel.set_running(True)
+        self.console_panel.log_info(f"Computing rolling {metric} (window={window})...")
+
+        def _compute():
+            returns = prices.pct_change().dropna()
+            ret_a = returns[asset_a]
+
+            if metric == "Sharpe Ratio":
+                values = rolling_sharpe(ret_a, window=window)
+            elif metric == "Sortino Ratio":
+                values = rolling_sortino(ret_a, window=window)
+            elif metric == "Volatility":
+                values = rolling_volatility(ret_a, window=window)
+            elif metric == "Max Drawdown":
+                values = rolling_max_drawdown(ret_a, window=window)
+            elif metric == "Beta":
+                if not asset_b or asset_b not in returns.columns:
+                    raise ValueError(f"Asset B '{asset_b}' not available")
+                values = rolling_beta(ret_a, returns[asset_b], window=window)
+            elif metric == "Correlation":
+                if not asset_b or asset_b not in returns.columns:
+                    raise ValueError(f"Asset B '{asset_b}' not available")
+                values = rolling_correlation(ret_a, returns[asset_b], window=window)
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+
+            # Convert dates to epoch seconds for DateAxisItem
+            dates_epoch = np.array([
+                d.timestamp() for d in values.index
+            ], dtype=float)
+            return dates_epoch, values.values, metric
+
+        def _on_result(result):
+            dates_epoch, vals, name = result
+            self.rolling_panel.set_running(False)
+            self.rolling_panel.set_result(dates_epoch, vals, name)
+            self.console_panel.log_success(f"Rolling {name} computed ({window}-day window)")
+
+        def _on_error(msg):
+            self.rolling_panel.set_running(False)
+            self.console_panel.log_error(f"Rolling analytics error: {msg}")
+
+        run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
 
     # ── Dialogs ──────────────────────────────────────────────────────
     def _show_bl_views(self):
@@ -759,6 +949,7 @@ class MainWindow(QMainWindow):
         self.weights_panel.raise_()
 
         self.tabifyDockWidget(self.correlation_panel, self.backtest_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.rolling_panel)
         self.tabifyDockWidget(self.correlation_panel, self.risk_panel)
         self.correlation_panel.raise_()
 
@@ -772,9 +963,11 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.portfolio_panel, self.strategy_lab_panel)
         self.portfolio_panel.raise_()
 
-        # Comparison & Scenario tabbed with correlation
+        # Comparison, Scenario, Monte Carlo & Stress Test tabbed with correlation
         self.tabifyDockWidget(self.correlation_panel, self.comparison_panel)
         self.tabifyDockWidget(self.correlation_panel, self.scenario_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.monte_carlo_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.stress_test_panel)
         self.correlation_panel.raise_()
 
         # Bottom: Console
