@@ -280,6 +280,9 @@ class MainWindow(QMainWindow):
         self.optimization_panel.run_requested.connect(self._run_optimization)
         self.backtest_panel.run_requested.connect(self._run_backtest)
 
+        # Watchlist: add ticker → fetch price
+        self.watchlist_panel.add_ticker_requested.connect(self._on_watchlist_add)
+
         # B3: Save result for comparison
         self.optimization_panel.save_requested.connect(self._save_to_comparison)
 
@@ -340,6 +343,9 @@ class MainWindow(QMainWindow):
                 self.opt_controller._last_cov,
                 result.weights,
             )
+
+        # Feed price chart with the price data used for optimization
+        self._update_price_chart(self.opt_controller._prices)
 
         # Store last result for comparison save
         self._last_opt_result = result
@@ -558,6 +564,7 @@ class MainWindow(QMainWindow):
                 })
             if items:
                 self.ticker_bar.set_items(items)
+            self._populate_watchlist_from_portfolio()
             # Show success in dialog
             if hasattr(self, '_fid_dialog') and self._fid_dialog.isVisible():
                 self._fid_dialog.show_success(f"{len(portfolio.holdings)} positions loaded from CSV")
@@ -592,6 +599,7 @@ class MainWindow(QMainWindow):
             })
         if items:
             self.ticker_bar.set_items(items)
+        self._populate_watchlist_from_portfolio()
 
     def _on_fidelity_disconnected(self):
         self.set_fidelity_status(False)
@@ -647,6 +655,43 @@ class MainWindow(QMainWindow):
             self.console_panel.log_error(f"CSV import failed: {e}")
 
     # ── Helpers ───────────────────────────────────────────────────────
+    def _on_watchlist_add(self, symbol: str):
+        """Handle adding a symbol to the watchlist — fetch its current price."""
+        self.console_panel.log_info(f"Adding {symbol} to watchlist...")
+        existing = self.watchlist_panel.get_symbols()
+        if symbol in existing:
+            self.console_panel.log_warning(f"{symbol} already in watchlist")
+            return
+        # Add placeholder entry immediately, then fetch price
+        items = [{"symbol": s} for s in existing]
+        items.append({"symbol": symbol, "price": 0.0, "change": 0.0, "change_pct": 0.0, "volume": 0})
+        self.watchlist_panel.set_watchlist(items)
+        self.data_controller.fetch_current_price(symbol)
+
+    def _populate_watchlist_from_portfolio(self):
+        """Populate watchlist with portfolio holdings."""
+        if not self._portfolio:
+            return
+        items = []
+        for h in self._portfolio.holdings:
+            items.append({
+                "symbol": h.asset.symbol,
+                "price": h.current_price,
+                "change": h.unrealized_pnl / h.quantity if h.quantity else 0.0,
+                "change_pct": h.unrealized_pnl_pct,
+                "volume": 0,
+            })
+        if items:
+            self.watchlist_panel.set_watchlist(items[:30])  # top 30
+
+    def _update_price_chart(self, prices: pd.DataFrame | None):
+        """Feed price data to the price chart panel."""
+        if prices is None or prices.empty:
+            return
+        self.price_chart_panel.clear_all()
+        for col in prices.columns:
+            self.price_chart_panel.set_prices(col, prices.index, prices[col].values)
+
     def _get_active_symbols(self) -> list[str]:
         """Get the current list of symbols to optimize/backtest."""
         if self._portfolio and self._portfolio.symbols:

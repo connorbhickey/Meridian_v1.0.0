@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+import traceback
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerSignals(QObject):
@@ -32,7 +36,9 @@ class Worker(QRunnable):
             result = self.fn(*self.args, **self.kwargs)
             self.signals.result.emit(result)
         except Exception as e:
-            self.signals.error.emit(str(e))
+            tb = traceback.format_exc()
+            logger.error("Worker error in %s: %s\n%s", self.fn.__name__, e, tb)
+            self.signals.error.emit(f"{e}\n{tb}")
         finally:
             self.signals.finished.emit()
 

@@ -220,9 +220,10 @@ class BacktestController(QObject):
     def _on_error(self, msg: str):
         self._running = False
         self.running_changed.emit(False)
+        summary = msg.split("\n")[0] if "\n" in msg else msg
         logger.error("Backtest error: %s", msg)
         self.status_changed.emit("Backtest failed")
-        self.error.emit(f"Backtest error: {msg}")
+        self.error.emit(f"Backtest error: {summary}")
 
     # ── Fetch + Backtest ──────────────────────────────────────────────
 

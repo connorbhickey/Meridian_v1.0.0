@@ -326,9 +326,11 @@ class OptimizationController(QObject):
     def _on_error(self, msg: str):
         self._running = False
         self.running_changed.emit(False)
+        # msg may contain traceback after newline — log full, show summary
+        summary = msg.split("\n")[0] if "\n" in msg else msg
         logger.error("Optimization error: %s", msg)
         self.status_changed.emit("Optimization failed")
-        self.error.emit(f"Optimization error: {msg}")
+        self.error.emit(f"Optimization error: {summary}")
 
     # ── Fetch Prices + Optimize ───────────────────────────────────────
 

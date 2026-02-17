@@ -46,6 +46,7 @@ class Holding:
     cost_basis: float = 0.0           # Total cost basis
     current_price: float = 0.0
     account: str = ""                 # Account name/number
+    _weight: float = field(default=0.0, repr=False)
 
     @property
     def market_value(self) -> float:
@@ -65,8 +66,12 @@ class Holding:
 
     @property
     def weight(self) -> float:
-        """Weight placeholder — set externally by Portfolio."""
-        return 0.0
+        """Portfolio weight — set by Portfolio._update_weights()."""
+        return self._weight
+
+    @weight.setter
+    def weight(self, value: float):
+        self._weight = value
 
 
 @dataclass
@@ -88,6 +93,15 @@ class Portfolio:
     holdings: list[Holding] = field(default_factory=list)
     accounts: list[AccountSummary] = field(default_factory=list)
     last_updated: datetime | None = None
+
+    def __post_init__(self):
+        self._update_weights()
+
+    def _update_weights(self):
+        """Recompute and set weight on each holding."""
+        tv = self.total_value
+        for h in self.holdings:
+            h.weight = h.market_value / tv if tv > 0 else 0.0
 
     @property
     def total_value(self) -> float:

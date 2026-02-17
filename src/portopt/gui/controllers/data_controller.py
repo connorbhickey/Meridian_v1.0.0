@@ -78,9 +78,10 @@ class DataController(QObject):
         )
 
     def _on_error(self, msg: str):
+        summary = msg.split("\n")[0] if "\n" in msg else msg
         logger.error("Data error: %s", msg)
         self.status_changed.emit("Data error")
-        self.error.emit(msg)
+        self.error.emit(summary)
 
     def get_cache_size(self) -> float:
         return self.data_manager.cache.get_cache_size_mb()
