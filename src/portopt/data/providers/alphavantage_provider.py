@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 
 from portopt.config import get_alpha_vantage_key
+from portopt.utils.credentials import ALPHA_VANTAGE_API_KEY, get_credential
 from portopt.data.models import Asset, AssetType
 from portopt.data.providers.base import BaseDataProvider
 
@@ -21,7 +22,7 @@ class AlphaVantageProvider(BaseDataProvider):
     """Data provider backed by Alpha Vantage REST API."""
 
     def __init__(self, api_key: str | None = None):
-        self._api_key = api_key or get_alpha_vantage_key()
+        self._api_key = api_key or get_credential(ALPHA_VANTAGE_API_KEY) or get_alpha_vantage_key()
 
     @property
     def available(self) -> bool:

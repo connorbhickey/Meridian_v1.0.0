@@ -46,7 +46,8 @@ class FredProvider(BaseDataProvider):
 
     def __init__(self, api_key: str | None = None):
         import os
-        self._api_key = api_key or os.environ.get("FRED_API_KEY", "")
+        from portopt.utils.credentials import FRED_API_KEY, get_credential
+        self._api_key = api_key or get_credential(FRED_API_KEY) or os.environ.get("FRED_API_KEY", "")
 
     @property
     def available(self) -> bool:
