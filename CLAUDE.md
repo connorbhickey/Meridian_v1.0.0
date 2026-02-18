@@ -61,6 +61,14 @@ src/portopt/
       risk_budget_panel.py   # Risk contribution chart + budget editor
       tax_harvest_panel.py   # Harvest candidates table + savings chart
       ...                    # 14 more panels (metrics, risk, frontier, etc.)
+    dialogs/
+      preferences_dialog.py  # Application preferences (theme, data, optimization defaults)
+      export_dialog.py       # Multi-format export (CSV, JSON, Excel, PNG)
+      ...                    # 6 more dialogs (BL views, constraints, layout, etc.)
+scripts/
+  build.py                   # PyInstaller build script
+meridian.spec                # PyInstaller spec file
+.github/workflows/ci.yml     # GitHub Actions CI (pytest + lint)
 ```
 
 ## Architecture Rules
@@ -97,10 +105,11 @@ python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 
 ## Enhancement Plan
 
-See `ENHANCEMENT_PLAN.md` for the full 8-phase roadmap. Current focus:
-- **Phase 1**: Polish & bug fixes (Holding.weight, controller error handling, console logging, panel completion, keyboard shortcuts)
-- **Phase 5**: AI agent integration (Copilot panel, report generation)
-- **Phase 3**: Engine enhancements (Monte Carlo, factor models, regime detection, risk budgeting, tax harvest) — **COMPLETE**
+See `ENHANCEMENT_PLAN.md` for the full 8-phase roadmap. Completed phases:
+- **Phase 1**: Polish & bug fixes — **COMPLETE**
+- **Phase 3**: Engine enhancements (factor models, regime detection, risk budgeting, tax harvest) — **COMPLETE**
+- **Phase 5**: AI agent integration (Copilot panel, report generation) — **COMPLETE**
+- **Phase 7**: Infrastructure (export, preferences, PyInstaller, CI/CD) — **COMPLETE**
 
 ## Tech Stack
 

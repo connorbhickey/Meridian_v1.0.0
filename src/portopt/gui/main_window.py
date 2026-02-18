@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
-from PySide6.QtCore import Qt, QSize, QTimer, QSettings
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QMainWindow, QMenuBar, QMenu, QStatusBar, QLabel,
@@ -50,10 +50,17 @@ from portopt.gui.controllers.monte_carlo_controller import MonteCarloController
 from portopt.gui.dialogs.fidelity_login_dialog import FidelityLoginDialog
 from portopt.gui.dialogs.bl_views_dialog import BLViewsDialog
 from portopt.gui.dialogs.constraint_dialog import ConstraintDialog
-from portopt.gui.dialogs.export_dialog import ExportDialog, export_weights_csv, export_trades_csv, export_metrics_csv
+from portopt.gui.dialogs.export_dialog import (
+    ExportDialog, export_weights_csv, export_trades_csv, export_metrics_csv,
+    export_optimization_json, export_session_json, export_excel_report, export_charts_png,
+    FMT_CSV_WEIGHTS, FMT_CSV_TRADES, FMT_CSV_METRICS,
+    FMT_JSON_RESULTS, FMT_JSON_SESSION, FMT_EXCEL_REPORT, FMT_PNG_CHARTS,
+)
 from portopt.gui.dialogs.layout_dialog import LayoutDialog
 from portopt.gui.dialogs.api_key_dialog import ApiKeyDialog
 from portopt.gui.dialogs.report_dialog import ReportDialog
+from portopt.gui.dialogs.preferences_dialog import PreferencesDialog
+from portopt.config import get_settings
 from portopt.data.importers.fidelity_csv import parse_fidelity_csv
 from portopt.data.importers.generic_csv import parse_generic_csv
 from portopt.engine.constraints import PortfolioConstraints
@@ -88,7 +95,7 @@ class MainWindow(QMainWindow):
         # State
         self._portfolio = None
         self._constraints = PortfolioConstraints()
-        self._settings = QSettings(APP_NAME, APP_NAME)
+        self._settings = get_settings()
 
         self._setup_ticker_bar()
         self._setup_panels()
@@ -875,7 +882,7 @@ class MainWindow(QMainWindow):
         fmt = config["format"]
         path = config["path"]
         try:
-            if "Weights" in fmt and self.opt_controller.last_result:
+            if fmt == FMT_CSV_WEIGHTS and self.opt_controller.last_result:
                 result = self.opt_controller.last_result
                 metadata = {"method": result.method, "sharpe": f"{result.sharpe_ratio:.4f}"}
                 if config.get("include_metadata"):
@@ -884,7 +891,7 @@ class MainWindow(QMainWindow):
                     export_weights_csv(result.weights, path)
                 self.console_panel.log_success(f"Weights exported to {path}")
 
-            elif "Trades" in fmt and self.bt_controller.last_output:
+            elif fmt == FMT_CSV_TRADES and self.bt_controller.last_output:
                 output = self.bt_controller.last_output
                 trades = []
                 if output.result:
@@ -892,12 +899,53 @@ class MainWindow(QMainWindow):
                 export_trades_csv(trades, path)
                 self.console_panel.log_success(f"Trades exported to {path}")
 
-            elif "Metrics" in fmt:
+            elif fmt == FMT_CSV_METRICS:
                 metrics = {}
                 if self.bt_controller.last_output:
                     metrics = self.bt_controller.last_output.metrics
                 export_metrics_csv(metrics, path)
                 self.console_panel.log_success(f"Metrics exported to {path}")
+
+            elif fmt == FMT_JSON_RESULTS and self.opt_controller.last_result:
+                export_optimization_json(self.opt_controller.last_result, path)
+                self.console_panel.log_success(f"Optimization JSON exported to {path}")
+
+            elif fmt == FMT_JSON_SESSION:
+                export_session_json(
+                    opt_result=self.opt_controller.last_result,
+                    bt_output=self.bt_controller.last_output,
+                    portfolio=self._portfolio,
+                    path=path,
+                )
+                self.console_panel.log_success(f"Session state exported to {path}")
+
+            elif fmt == FMT_EXCEL_REPORT:
+                weights = self.opt_controller.last_result.weights if self.opt_controller.last_result else None
+                metrics = self.bt_controller.last_output.metrics if self.bt_controller.last_output else None
+                trades = None
+                if self.bt_controller.last_output and self.bt_controller.last_output.result:
+                    trades = self.bt_controller._trades_to_dicts(self.bt_controller.last_output.result.trades)
+                export_excel_report(weights=weights, metrics=metrics, trades=trades, path=path)
+                self.console_panel.log_success(f"Excel report exported to {path}")
+
+            elif fmt == FMT_PNG_CHARTS:
+                chart_panels = {
+                    "frontier": self.frontier_panel,
+                    "correlation": self.correlation_panel,
+                    "backtest": self.backtest_panel,
+                    "network": self.network_panel,
+                    "monte_carlo": self.monte_carlo_panel,
+                    "stress_test": self.stress_test_panel,
+                    "rolling": self.rolling_panel,
+                    "factor_analysis": self.factor_panel,
+                    "regime": self.regime_panel,
+                    "risk_budget": self.risk_budget_panel,
+                }
+                n = export_charts_png(chart_panels, path)
+                self.console_panel.log_success(f"Exported {n} charts to {path}")
+
+            else:
+                self.console_panel.log_warning(f"No data available for {fmt}")
         except Exception as e:
             self.console_panel.log_error(f"Export failed: {e}")
 
@@ -1254,6 +1302,8 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self._action("E&xport...", "Ctrl+Shift+E", self._show_export))
         file_menu.addSeparator()
+        file_menu.addAction(self._action("&Preferences...", "Ctrl+,", self._show_preferences))
+        file_menu.addSeparator()
         file_menu.addAction(self._action("&Exit", "Ctrl+Q", self.close))
 
         # View
@@ -1330,6 +1380,14 @@ class MainWindow(QMainWindow):
         if ok and name.strip():
             self.dock_manager.save_layout(name.strip())
             self.console_panel.log_success(f"View '{name.strip()}' saved")
+
+    def _show_preferences(self):
+        """Show the application preferences dialog."""
+        dialog = PreferencesDialog(self)
+        dialog.settings_changed.connect(
+            lambda: self.console_panel.log_info("Preferences updated — some changes take effect on restart")
+        )
+        dialog.exec()
 
     def _show_about(self):
         QMessageBox.about(
