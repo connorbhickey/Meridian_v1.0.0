@@ -33,6 +33,10 @@ src/portopt/
     risk.py                  # Covariance estimation, cov_to_corr, corr_to_cov
     returns.py               # Return estimation (historical mean, CAPM, etc.)
     metrics.py               # Portfolio metrics computation
+    factors.py               # Fama-French 3-factor model + exposure analysis
+    regime.py                # HMM regime detection + rolling vol regimes
+    risk_budgeting.py        # Risk budget optimization + Euler decomposition + ERC
+    tax_harvest.py           # Tax-loss harvesting candidates + replacement suggestions
     network/mst.py           # Minimum Spanning Tree (takes DataFrame, NOT networkx Graph)
   backtest/
     engine.py                # BacktestEngine + BacktestConfig + BacktestOutput
@@ -52,6 +56,10 @@ src/portopt/
       strategy_lab_panel.py  # Independent optimization/backtest sandbox
       optimization_panel.py  # Optimization config controls
       backtest_panel.py      # Backtest config controls
+      factor_panel.py        # Factor exposure chart + regression table
+      regime_panel.py        # HMM regime timeline + transition matrix
+      risk_budget_panel.py   # Risk contribution chart + budget editor
+      tax_harvest_panel.py   # Harvest candidates table + savings chart
       ...                    # 14 more panels (metrics, risk, frontier, etc.)
 ```
 
@@ -83,7 +91,7 @@ python -m pytest tests/engine/ -x -q   # Engine tests only
 python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 ```
 
-- 208+ tests across engine, data, backtest, and GUI layers.
+- 372+ tests across engine, data, backtest, and GUI layers.
 - `pytest-qt` must be installed separately (`pip install pytest-qt`).
 - Test fixtures are in `tests/conftest.py`.
 
@@ -92,7 +100,7 @@ python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 See `ENHANCEMENT_PLAN.md` for the full 8-phase roadmap. Current focus:
 - **Phase 1**: Polish & bug fixes (Holding.weight, controller error handling, console logging, panel completion, keyboard shortcuts)
 - **Phase 5**: AI agent integration (Copilot panel, report generation)
-- **Phase 3**: Engine enhancements (Monte Carlo, factor models, regime detection)
+- **Phase 3**: Engine enhancements (Monte Carlo, factor models, regime detection, risk budgeting, tax harvest) — **COMPLETE**
 
 ## Tech Stack
 

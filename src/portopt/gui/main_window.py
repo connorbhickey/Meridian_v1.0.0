@@ -36,6 +36,10 @@ from portopt.gui.panels.monte_carlo_panel import MonteCarloPanel
 from portopt.gui.panels.stress_test_panel import StressTestPanel
 from portopt.gui.panels.rolling_panel import RollingAnalyticsPanel
 from portopt.gui.panels.copilot_panel import CopilotPanel
+from portopt.gui.panels.factor_panel import FactorAnalysisPanel
+from portopt.gui.panels.regime_panel import RegimePanel
+from portopt.gui.panels.risk_budget_panel import RiskBudgetPanel
+from portopt.gui.panels.tax_harvest_panel import TaxHarvestPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.copilot_controller import CopilotController
@@ -204,6 +208,10 @@ class MainWindow(QMainWindow):
         self.stress_test_panel = StressTestPanel(self)
         self.rolling_panel = RollingAnalyticsPanel(self)
         self.copilot_panel = CopilotPanel(self)
+        self.factor_panel = FactorAnalysisPanel(self)
+        self.regime_panel = RegimePanel(self)
+        self.risk_budget_panel = RiskBudgetPanel(self)
+        self.tax_harvest_panel = TaxHarvestPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -213,7 +221,8 @@ class MainWindow(QMainWindow):
             self.trade_blotter_panel, self.risk_panel, self.comparison_panel,
             self.scenario_panel, self.strategy_lab_panel, self.monte_carlo_panel,
             self.stress_test_panel, self.rolling_panel, self.copilot_panel,
-            self.console_panel,
+            self.factor_panel, self.regime_panel, self.risk_budget_panel,
+            self.tax_harvest_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -301,6 +310,18 @@ class MainWindow(QMainWindow):
 
         # Rolling analytics panel
         self.rolling_panel.compute_requested.connect(self._run_rolling)
+
+        # Factor analysis panel
+        self.factor_panel.run_requested.connect(self._run_factor_analysis)
+
+        # Regime detection panel
+        self.regime_panel.run_requested.connect(self._run_regime_detection)
+
+        # Risk budget panel
+        self.risk_budget_panel.run_requested.connect(self._run_risk_budget)
+
+        # Tax harvest panel
+        self.tax_harvest_panel.run_requested.connect(self._run_tax_harvest)
 
         # Copilot controller
         self.copilot_controller = CopilotController(self)
@@ -406,6 +427,9 @@ class MainWindow(QMainWindow):
 
         # Feed rolling analytics panel with symbols
         self.rolling_panel.set_symbols(list(result.weights.keys()))
+
+        # Feed risk budget panel with symbols
+        self.risk_budget_panel.set_symbols(list(result.weights.keys()))
 
         # Feed copilot with portfolio context
         self.copilot_controller.set_context(
@@ -621,6 +645,147 @@ class MainWindow(QMainWindow):
         def _on_error(msg):
             self.rolling_panel.set_running(False)
             self.console_panel.log_error(f"Rolling analytics error: {msg}")
+
+        run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
+
+    # ── Factor Analysis Flow ────────────────────────────────────────
+    def _run_factor_analysis(self):
+        """Run Fama-French factor analysis on current portfolio."""
+        from portopt.engine.factors import run_factor_analysis
+        from portopt.utils.threading import run_in_thread
+
+        prices = getattr(self.opt_controller, "_prices", None)
+        result = getattr(self, "_last_opt_result", None)
+        if prices is None or prices.empty or result is None:
+            self.console_panel.log_warning("Run optimization first to provide data for factor analysis.")
+            return
+
+        self.factor_panel.set_running(True)
+        self.console_panel.log_info("Running Fama-French factor analysis...")
+
+        weights = result.weights
+
+        def _compute():
+            return run_factor_analysis(prices, weights)
+
+        def _on_result(factor_result):
+            self.factor_panel.set_running(False)
+            self.factor_panel.set_result(factor_result)
+            self.console_panel.log_success(
+                f"Factor analysis complete: {len(factor_result.asset_exposures)} assets"
+            )
+
+        def _on_error(msg):
+            self.factor_panel.set_running(False)
+            self.console_panel.log_error(f"Factor analysis error: {msg}")
+
+        run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
+
+    # ── Regime Detection Flow ────────────────────────────────────────
+    def _run_regime_detection(self, n_regimes: int):
+        """Run HMM regime detection on portfolio market returns."""
+        from portopt.engine.regime import detect_regimes
+        from portopt.utils.threading import run_in_thread
+
+        prices = getattr(self.opt_controller, "_prices", None)
+        if prices is None or prices.empty:
+            self.console_panel.log_warning("Run optimization first to provide data for regime detection.")
+            return
+
+        self.regime_panel.set_running(True)
+        self.console_panel.log_info(f"Detecting {n_regimes} market regimes...")
+
+        def _compute():
+            # Use equal-weighted portfolio returns as market proxy
+            returns = prices.pct_change().dropna().mean(axis=1)
+            return detect_regimes(returns, n_regimes=n_regimes)
+
+        def _on_result(regime_result):
+            self.regime_panel.set_running(False)
+            self.regime_panel.set_result(regime_result)
+            self.console_panel.log_success(
+                f"Regime detection complete: current={regime_result.current_regime_name}"
+            )
+
+        def _on_error(msg):
+            self.regime_panel.set_running(False)
+            self.console_panel.log_error(f"Regime detection error: {msg}")
+
+        run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
+
+    # ── Risk Budget Flow ─────────────────────────────────────────────
+    def _run_risk_budget(self, config: dict):
+        """Run risk budget or ERC optimization."""
+        from portopt.engine.risk_budgeting import (
+            equal_risk_contribution, optimize_risk_budget,
+        )
+        from portopt.utils.threading import run_in_thread
+
+        mu = getattr(self.opt_controller, "_last_mu", None)
+        cov = getattr(self.opt_controller, "_last_cov", None)
+        if mu is None or cov is None:
+            self.console_panel.log_warning("Run optimization first to provide data for risk budgeting.")
+            return
+
+        is_erc = config.get("erc", True)
+        budgets = config.get("budgets", {})
+
+        self.risk_budget_panel.set_running(True)
+        label = "Equal Risk Contribution" if is_erc else "Risk Budget"
+        self.console_panel.log_info(f"Running {label} optimization...")
+
+        def _compute():
+            if is_erc:
+                return equal_risk_contribution(mu, cov)
+            else:
+                return optimize_risk_budget(mu, cov, budgets)
+
+        def _on_result(result):
+            self.risk_budget_panel.set_running(False)
+            self.risk_budget_panel.set_result(result)
+            self.console_panel.log_success(
+                f"{label} complete: Sharpe={result.sharpe_ratio:.3f}"
+            )
+
+        def _on_error(msg):
+            self.risk_budget_panel.set_running(False)
+            self.console_panel.log_error(f"Risk budget error: {msg}")
+
+        run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
+
+    # ── Tax Harvest Flow ─────────────────────────────────────────────
+    def _run_tax_harvest(self, tax_rate: float):
+        """Run tax-loss harvesting analysis on current portfolio."""
+        from portopt.engine.tax_harvest import compute_harvest_recommendation
+        from portopt.utils.threading import run_in_thread
+
+        if not self._portfolio or not self._portfolio.holdings:
+            self.console_panel.log_warning("Import a portfolio first for tax-loss harvesting analysis.")
+            return
+
+        prices = getattr(self.opt_controller, "_prices", None)
+        self.tax_harvest_panel.set_running(True)
+        self.console_panel.log_info(f"Analyzing tax-loss harvesting opportunities (rate={tax_rate:.0%})...")
+
+        holdings = self._portfolio.holdings
+
+        def _compute():
+            return compute_harvest_recommendation(
+                holdings, prices=prices, tax_rate=tax_rate,
+            )
+
+        def _on_result(recommendation):
+            self.tax_harvest_panel.set_running(False)
+            self.tax_harvest_panel.set_result(recommendation)
+            n = len(recommendation.candidates)
+            self.console_panel.log_success(
+                f"Tax harvest analysis: {n} candidates, "
+                f"${recommendation.total_tax_savings:,.0f} potential savings"
+            )
+
+        def _on_error(msg):
+            self.tax_harvest_panel.set_running(False)
+            self.console_panel.log_error(f"Tax harvest error: {msg}")
 
         run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
 
@@ -1039,11 +1204,15 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.portfolio_panel, self.strategy_lab_panel)
         self.portfolio_panel.raise_()
 
-        # Comparison, Scenario, Monte Carlo & Stress Test tabbed with correlation
+        # Comparison, Scenario, Monte Carlo, Stress Test, Factor, Regime, Risk Budget, Tax Harvest
         self.tabifyDockWidget(self.correlation_panel, self.comparison_panel)
         self.tabifyDockWidget(self.correlation_panel, self.scenario_panel)
         self.tabifyDockWidget(self.correlation_panel, self.monte_carlo_panel)
         self.tabifyDockWidget(self.correlation_panel, self.stress_test_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.factor_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.regime_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.risk_budget_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.tax_harvest_panel)
         self.correlation_panel.raise_()
 
         # Bottom: Console + Copilot (tabbed)

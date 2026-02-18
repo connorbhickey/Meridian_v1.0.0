@@ -104,6 +104,7 @@ class OptMethod(Enum):
     HRP = auto()
     HERC = auto()
     TIC = auto()
+    RISK_BUDGET = auto()
 
 
 class OnlineMethod(Enum):
@@ -211,3 +212,7 @@ class PanelID(Enum):
     STRESS_TEST = "stress_test"
     ROLLING_ANALYTICS = "rolling_analytics"
     COPILOT = "copilot"
+    FACTOR_ANALYSIS = "factor_analysis"
+    REGIME = "regime"
+    RISK_BUDGET = "risk_budget"
+    TAX_HARVEST = "tax_harvest"
