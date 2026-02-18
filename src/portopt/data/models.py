@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum, auto
 
+import numpy as np
+
+from portopt.constants import MCSimMethod
+
 
 class AssetType(Enum):
     STOCK = auto()
@@ -174,3 +178,52 @@ class PriceBar:
     close: float
     volume: float = 0.0
     adj_close: float | None = None
+
+
+# ── Monte Carlo ──────────────────────────────────────────────────────
+
+@dataclass
+class MonteCarloConfig:
+    """Configuration for a Monte Carlo simulation run."""
+    n_sims: int = 1000
+    horizon_days: int = 252
+    method: MCSimMethod = MCSimMethod.PARAMETRIC
+    block_size: int = 20              # for block bootstrap
+    initial_value: float = 100_000.0
+    spending_rate: float = 0.04       # annual withdrawal rate for shortfall calc
+    risk_free_rate: float = 0.04
+    frequency: int = 252
+    percentiles: tuple[int, ...] = (5, 25, 50, 75, 95)
+
+
+@dataclass
+class MonteCarloResult:
+    """Aggregated output from a Monte Carlo simulation."""
+    # Fan chart: shape (horizon_days+1, len(percentiles))
+    equity_percentiles: np.ndarray
+    percentile_labels: tuple[int, ...]
+    dates: list[date]
+
+    # Metrics distribution: key -> sorted array of length n_sims
+    metrics_distributions: dict[str, np.ndarray]
+
+    # Shortfall analysis
+    shortfall_probability: float
+    shortfall_threshold: float
+
+    # Summary
+    n_sims: int
+    method: str
+    config: MonteCarloConfig
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def median_curve(self) -> np.ndarray:
+        """Median equity curve (50th percentile)."""
+        idx = list(self.percentile_labels).index(50)
+        return self.equity_percentiles[:, idx]
+
+    def percentile_curve(self, pct: int) -> np.ndarray:
+        """Get equity curve for a specific percentile."""
+        idx = list(self.percentile_labels).index(pct)
+        return self.equity_percentiles[:, idx]

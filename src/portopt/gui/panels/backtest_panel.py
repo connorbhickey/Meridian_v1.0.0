@@ -1,10 +1,11 @@
-"""Dockable BACKTEST panel — configuration and equity curve display."""
+"""Dockable BACKTEST panel — configuration, equity curve, and benchmark comparison."""
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFormLayout, QComboBox,
     QSpinBox, QDoubleSpinBox, QPushButton, QProgressBar,
-    QGroupBox, QCheckBox, QSplitter,
+    QGroupBox, QCheckBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QHeaderView, QLabel,
 )
 import pyqtgraph as pg
 import numpy as np
@@ -132,6 +133,22 @@ class BacktestPanel(BasePanel):
         params_group.setLayout(params_layout)
         config_layout.addWidget(params_group)
 
+        # Benchmark
+        bench_group = QGroupBox("Benchmark")
+        bench_group.setStyleSheet(self._group_style())
+        bench_layout = QFormLayout()
+        bench_layout.setSpacing(4)
+
+        self._benchmark_combo = QComboBox()
+        self._benchmark_combo.addItems([
+            "None", "SPY", "QQQ", "IWM", "AGG",
+            "60/40 (SPY/AGG)", "Equal-Weight",
+        ])
+        bench_layout.addRow("Compare:", self._benchmark_combo)
+
+        bench_group.setLayout(bench_layout)
+        config_layout.addWidget(bench_group)
+
         # Run button
         self._run_btn = QPushButton("RUN BACKTEST")
         self._run_btn.setFixedHeight(36)
@@ -195,6 +212,47 @@ class BacktestPanel(BasePanel):
         # Link x-axes
         self._dd_plot.setXLink(self._equity_plot)
 
+        # Benchmark comparison table
+        self._bench_label = QLabel("BENCHMARK COMPARISON")
+        self._bench_label.setStyleSheet(f"""
+            color: {Colors.TEXT_MUTED}; font-family: {Fonts.SANS};
+            font-size: 10px; font-weight: bold; padding: 4px 0 2px 4px;
+        """)
+        self._bench_label.hide()
+        chart_layout.addWidget(self._bench_label)
+
+        self._bench_table = QTableWidget(8, 3)
+        self._bench_table.setHorizontalHeaderLabels(["Portfolio", "Benchmark", "Diff"])
+        self._bench_table.setVerticalHeaderLabels([
+            "Return", "Volatility", "Sharpe", "Max DD",
+            "Alpha", "Beta", "Track. Error", "Info Ratio",
+        ])
+        self._bench_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._bench_table.verticalHeader().setDefaultSectionSize(22)
+        self._bench_table.setFixedHeight(210)
+        self._bench_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._bench_table.setStyleSheet(f"""
+            QTableWidget {{
+                background: {Colors.BG_SECONDARY};
+                color: {Colors.TEXT_PRIMARY};
+                gridline-color: {Colors.BORDER};
+                font-family: {Fonts.MONO};
+                font-size: 10px;
+                border: 1px solid {Colors.BORDER};
+            }}
+            QHeaderView::section {{
+                background: {Colors.BG_TERTIARY};
+                color: {Colors.TEXT_MUTED};
+                border: 1px solid {Colors.BORDER};
+                padding: 2px 4px;
+                font-family: {Fonts.SANS};
+                font-size: 9px;
+                font-weight: bold;
+            }}
+        """)
+        self._bench_table.hide()
+        chart_layout.addWidget(self._bench_table)
+
         splitter.addWidget(chart_widget)
         splitter.setSizes([250, 550])
 
@@ -204,6 +262,7 @@ class BacktestPanel(BasePanel):
     # ── Public API ───────────────────────────────────────────────────
 
     def get_config(self) -> dict:
+        bench = self._benchmark_combo.currentText()
         return {
             "rebalance_freq": self._freq_combo.currentData(),
             "drift_threshold": self._drift_spin.value(),
@@ -215,6 +274,7 @@ class BacktestPanel(BasePanel):
             "anchored": self._anchored_check.isChecked(),
             "initial_value": self._initial_spin.value(),
             "lookback": self._lookback_spin.value(),
+            "benchmark": bench if bench != "None" else None,
         }
 
     def set_equity_curve(self, dates_epoch, values):
@@ -239,6 +299,47 @@ class BacktestPanel(BasePanel):
         """Overlay a benchmark equity curve."""
         pen = pg.mkPen(Colors.TEXT_MUTED, width=1, style=Qt.DashLine)
         self._equity_plot.plot(dates_epoch, values, pen=pen, name=label)
+
+    def set_benchmark_metrics(self, port_metrics: dict, bench_metrics: dict):
+        """Populate the benchmark comparison table with color-coded diffs."""
+        self._bench_label.show()
+        self._bench_table.show()
+
+        # Metric keys in order matching table rows
+        rows = [
+            ("total_return", "{:.2%}", True),       # higher is better
+            ("annual_volatility", "{:.2%}", False),  # lower is better
+            ("sharpe_ratio", "{:.3f}", True),
+            ("max_drawdown", "{:.2%}", False),       # less negative is better
+            ("alpha", "{:.4f}", True),
+            ("beta", "{:.3f}", None),                # neutral
+            ("tracking_error", "{:.4f}", None),
+            ("information_ratio", "{:.3f}", True),
+        ]
+
+        for i, (key, fmt, higher_better) in enumerate(rows):
+            pv = port_metrics.get(key, 0.0)
+            bv = bench_metrics.get(key, 0.0)
+            diff = pv - bv
+
+            p_item = QTableWidgetItem(fmt.format(pv))
+            b_item = QTableWidgetItem(fmt.format(bv))
+            d_item = QTableWidgetItem(fmt.format(diff))
+
+            p_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            b_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            d_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+            # Color the diff column
+            if higher_better is not None and abs(diff) > 1e-6:
+                is_good = (diff > 0) == higher_better
+                color = Colors.PROFIT if is_good else Colors.LOSS
+                from PySide6.QtGui import QColor
+                d_item.setForeground(QColor(color))
+
+            self._bench_table.setItem(i, 0, p_item)
+            self._bench_table.setItem(i, 1, b_item)
+            self._bench_table.setItem(i, 2, d_item)
 
     def set_running(self, running: bool):
         self._run_btn.setEnabled(not running)
