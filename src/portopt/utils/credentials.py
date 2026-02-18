@@ -48,3 +48,4 @@ def has_credential(key: str) -> bool:
 FIDELITY_USERNAME = "fidelity_username"
 FIDELITY_PASSWORD = "fidelity_password"
 FIDELITY_TOTP_SECRET = "fidelity_totp_secret"
+ANTHROPIC_API_KEY = "anthropic_api_key"

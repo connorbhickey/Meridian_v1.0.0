@@ -210,3 +210,4 @@ class PanelID(Enum):
     MONTE_CARLO = "monte_carlo"
     STRESS_TEST = "stress_test"
     ROLLING_ANALYTICS = "rolling_analytics"
+    COPILOT = "copilot"

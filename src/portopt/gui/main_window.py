@@ -35,8 +35,10 @@ from portopt.gui.panels.strategy_lab_panel import StrategyLabPanel
 from portopt.gui.panels.monte_carlo_panel import MonteCarloPanel
 from portopt.gui.panels.stress_test_panel import StressTestPanel
 from portopt.gui.panels.rolling_panel import RollingAnalyticsPanel
+from portopt.gui.panels.copilot_panel import CopilotPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
+from portopt.gui.controllers.copilot_controller import CopilotController
 from portopt.gui.controllers.data_controller import DataController
 from portopt.gui.controllers.optimization_controller import OptimizationController
 from portopt.gui.controllers.backtest_controller import BacktestController
@@ -46,6 +48,8 @@ from portopt.gui.dialogs.bl_views_dialog import BLViewsDialog
 from portopt.gui.dialogs.constraint_dialog import ConstraintDialog
 from portopt.gui.dialogs.export_dialog import ExportDialog, export_weights_csv, export_trades_csv, export_metrics_csv
 from portopt.gui.dialogs.layout_dialog import LayoutDialog
+from portopt.gui.dialogs.api_key_dialog import ApiKeyDialog
+from portopt.gui.dialogs.report_dialog import ReportDialog
 from portopt.data.importers.fidelity_csv import parse_fidelity_csv
 from portopt.data.importers.generic_csv import parse_generic_csv
 from portopt.engine.constraints import PortfolioConstraints
@@ -199,6 +203,7 @@ class MainWindow(QMainWindow):
         self.monte_carlo_panel = MonteCarloPanel(self)
         self.stress_test_panel = StressTestPanel(self)
         self.rolling_panel = RollingAnalyticsPanel(self)
+        self.copilot_panel = CopilotPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -207,7 +212,8 @@ class MainWindow(QMainWindow):
             self.attribution_panel, self.network_panel, self.dendrogram_panel,
             self.trade_blotter_panel, self.risk_panel, self.comparison_panel,
             self.scenario_panel, self.strategy_lab_panel, self.monte_carlo_panel,
-            self.stress_test_panel, self.rolling_panel, self.console_panel,
+            self.stress_test_panel, self.rolling_panel, self.copilot_panel,
+            self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -295,6 +301,18 @@ class MainWindow(QMainWindow):
 
         # Rolling analytics panel
         self.rolling_panel.compute_requested.connect(self._run_rolling)
+
+        # Copilot controller
+        self.copilot_controller = CopilotController(self)
+        self.copilot_panel.message_submitted.connect(self._on_copilot_message)
+        self.copilot_controller.response_chunk.connect(
+            self.copilot_panel.append_assistant_chunk
+        )
+        self.copilot_controller.tool_use_started.connect(
+            self.copilot_panel.show_tool_use
+        )
+        self.copilot_controller.response_complete.connect(self._on_copilot_response)
+        self.copilot_controller.error.connect(self.copilot_panel.show_error)
 
         # Strategy Lab: own controllers (isolated from main portfolio)
         self._lab_opt_controller = OptimizationController(self.data_controller, self)
@@ -388,6 +406,15 @@ class MainWindow(QMainWindow):
 
         # Feed rolling analytics panel with symbols
         self.rolling_panel.set_symbols(list(result.weights.keys()))
+
+        # Feed copilot with portfolio context
+        self.copilot_controller.set_context(
+            prices=self.opt_controller._prices,
+            weights=result.weights,
+            mu=self.opt_controller._last_mu,
+            cov=self.opt_controller._last_cov,
+            result=result,
+        )
 
         # Store last result for comparison save
         self._last_opt_result = result
@@ -596,6 +623,55 @@ class MainWindow(QMainWindow):
             self.console_panel.log_error(f"Rolling analytics error: {msg}")
 
         run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
+
+    # ── Copilot Flow ─────────────────────────────────────────────────
+    def _on_copilot_message(self, text: str):
+        """Handle user message from copilot panel."""
+        self.copilot_panel.append_user_message(text)
+        self.copilot_panel.start_assistant_message()
+        self.copilot_panel.set_waiting(True)
+        self.copilot_controller.send_message(text)
+
+    def _on_copilot_response(self, full_text: str):
+        """Handle completed copilot response."""
+        self.copilot_panel.finish_assistant_message()
+        self.copilot_panel.set_waiting(False)
+
+    def _show_copilot(self):
+        """Raise and show the copilot panel."""
+        self.copilot_panel.show()
+        self.copilot_panel.raise_()
+
+    def _show_api_key_dialog(self):
+        """Show the Anthropic API key configuration dialog."""
+        dialog = ApiKeyDialog(self)
+        if dialog.exec() == ApiKeyDialog.DialogCode.Accepted:
+            key = dialog.get_api_key()
+            if key:
+                self.console_panel.log_success("Anthropic API key saved.")
+            else:
+                self.console_panel.log_info("Anthropic API key removed.")
+
+    def _show_report_dialog(self):
+        """Show the report generation dialog."""
+        result = getattr(self, "_last_opt_result", None)
+        weights_dict = result.weights if result else None
+        metrics = getattr(self.metrics_panel, "_metrics", None)
+
+        panels = {
+            "frontier": self.frontier_panel,
+            "weights": self.weights_panel,
+            "correlation": self.correlation_panel,
+        }
+
+        dialog = ReportDialog(
+            parent=self,
+            weights=weights_dict,
+            metrics=metrics,
+            panels=panels,
+            copilot_controller=self.copilot_controller,
+        )
+        dialog.exec()
 
     # ── Dialogs ──────────────────────────────────────────────────────
     def _show_bl_views(self):
@@ -970,8 +1046,10 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.correlation_panel, self.stress_test_panel)
         self.correlation_panel.raise_()
 
-        # Bottom: Console
+        # Bottom: Console + Copilot (tabbed)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
+        self.tabifyDockWidget(self.console_panel, self.copilot_panel)
+        self.console_panel.raise_()
 
         for panel in self.panels.values():
             panel.show()
@@ -1049,6 +1127,13 @@ class MainWindow(QMainWindow):
         # Backtest
         bt_menu = menubar.addMenu("&Backtest")
         bt_menu.addAction(self._action("&Run Backtest", "Ctrl+B", lambda: self._run_backtest(self.backtest_panel.get_config())))
+
+        # AI
+        ai_menu = menubar.addMenu("&AI")
+        ai_menu.addAction(self._action("&Copilot", "Ctrl+Shift+A", self._show_copilot))
+        ai_menu.addAction(self._action("&API Key...", callback=self._show_api_key_dialog))
+        ai_menu.addSeparator()
+        ai_menu.addAction(self._action("Generate &Report...", "Ctrl+R", self._show_report_dialog))
 
         # Help
         help_menu = menubar.addMenu("&Help")
