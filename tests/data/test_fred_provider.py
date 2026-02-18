@@ -20,8 +20,9 @@ def test_init_with_api_key():
     assert provider._api_key == "test-key-123"
 
 
+@patch("portopt.utils.credentials.get_credential", return_value=None)
 @patch.dict("os.environ", {"FRED_API_KEY": "env-key-456"})
-def test_init_from_env():
+def test_init_from_env(_mock_cred):
     """FredProvider reads FRED_API_KEY from the environment when no arg given."""
     provider = FredProvider()
     assert provider._api_key == "env-key-456"

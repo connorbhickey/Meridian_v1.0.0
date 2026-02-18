@@ -64,6 +64,9 @@ from portopt.gui.dialogs.layout_dialog import LayoutDialog
 from portopt.gui.dialogs.api_key_dialog import ApiKeyDialog
 from portopt.gui.dialogs.report_dialog import ReportDialog
 from portopt.gui.dialogs.preferences_dialog import PreferencesDialog
+from portopt.gui.dialogs.about_dialog import AboutDialog
+from portopt.gui.dialogs.shortcuts_dialog import ShortcutsDialog
+from portopt.gui.dialogs.welcome_dialog import WelcomeDialog
 from portopt.config import get_settings
 from portopt.data.importers.fidelity_csv import parse_fidelity_csv
 from portopt.data.importers.generic_csv import parse_generic_csv
@@ -161,19 +164,26 @@ class MainWindow(QMainWindow):
 
     # ── Startup ──────────────────────────────────────────────────────
     def _on_startup(self):
-        """Called shortly after window shows — attempt Fidelity auto-connect."""
+        """Called shortly after window shows — welcome wizard, provider status, auto-connect."""
         self.console_panel.log_info(f"{APP_NAME} terminal started")
         cache_mb = self.data_controller.get_cache_size()
         self.set_cache_status(f"CACHE: {cache_mb:.1f} MB")
+        self._update_provider_status()
+
+        # First-run welcome wizard
+        if not self._settings.value("app/welcome_shown", False, type=bool):
+            self._settings.setValue("app/welcome_shown", True)
+            dialog = WelcomeDialog(self)
+            accepted = dialog.exec_()
+            if accepted and dialog.selected_sample_path:
+                self._load_sample(dialog.selected_sample_path)
+            self._update_provider_status()
 
         if False and self.fidelity_controller.has_saved_session:
-            # Auto-connect disabled — too fragile with Playwright session persistence.
-            # Users should connect manually via Data > Fidelity Connection.
             self.console_panel.log_info("Found saved Fidelity session, attempting auto-connect...")
-            self.set_fidelity_status(None)  # amber = connecting
+            self.set_fidelity_status(None)
             self.fidelity_controller.try_auto_connect()
         else:
-            # Try loading cached portfolio for offline startup
             cached = self.fidelity_controller.load_cached_portfolio()
             if cached and cached.holdings:
                 self._portfolio = cached
@@ -183,7 +193,39 @@ class MainWindow(QMainWindow):
                     f"(last updated: {cached.last_updated.strftime('%Y-%m-%d %H:%M') if cached.last_updated else 'unknown'})"
                 )
             else:
-                self.console_panel.log_info("No saved Fidelity session. Use Data > Fidelity Connection to link your account.")
+                self.console_panel.log_info("No saved Fidelity session. Use Data > Fidelity Connection or File > Load Sample.")
+
+    def _update_provider_status(self):
+        """Update status bar with available data providers."""
+        from portopt.utils.credentials import (
+            ANTHROPIC_API_KEY, FRED_API_KEY, TIINGO_API_KEY, ALPHA_VANTAGE_API_KEY,
+            has_credential,
+        )
+        providers = ["YFin"]  # always available
+        if has_credential(TIINGO_API_KEY):
+            providers.append("Tiingo")
+        if has_credential(ALPHA_VANTAGE_API_KEY):
+            providers.append("AV")
+        if has_credential(FRED_API_KEY):
+            providers.append("FRED")
+        if has_credential(ANTHROPIC_API_KEY):
+            providers.append("AI")
+        self._provider_status.setText(f"PROVIDERS: {' | '.join(providers)}")
+
+    def _load_sample(self, path: str):
+        """Load a sample portfolio CSV."""
+        try:
+            from portopt.data.importers.generic_csv import parse_generic_csv
+            portfolio = parse_generic_csv(path)
+            self._portfolio = portfolio
+            self.portfolio_panel.set_portfolio(portfolio)
+            self.portfolio_panel.show()
+            self.portfolio_panel.raise_()
+            self.console_panel.log_success(
+                f"Loaded sample: {len(portfolio.holdings)} positions"
+            )
+        except Exception as e:
+            self.console_panel.log_error(f"Failed to load sample: {e}")
 
     # ── Ticker Bar ───────────────────────────────────────────────────
     def _setup_ticker_bar(self):
@@ -1608,6 +1650,14 @@ class MainWindow(QMainWindow):
         # File
         file_menu = menubar.addMenu("&File")
         file_menu.addAction(self._action("&Import Portfolio...", "Ctrl+I", self._import_csv))
+
+        # Sample portfolios submenu
+        samples_menu = file_menu.addMenu("Load &Sample")
+        from portopt.samples import SAMPLE_PORTFOLIOS
+        for name, path in SAMPLE_PORTFOLIOS.items():
+            p = str(path)
+            samples_menu.addAction(self._action(name, callback=lambda checked=False, fp=p: self._load_sample(fp)))
+
         file_menu.addSeparator()
         file_menu.addAction(self._action("E&xport...", "Ctrl+Shift+E", self._show_export))
         file_menu.addSeparator()
@@ -1676,6 +1726,8 @@ class MainWindow(QMainWindow):
 
         # Help
         help_menu = menubar.addMenu("&Help")
+        help_menu.addAction(self._action("&Keyboard Shortcuts", "F1", self._show_shortcuts))
+        help_menu.addSeparator()
         help_menu.addAction(self._action("&About", callback=self._show_about))
 
     def _action(self, text: str, shortcut: str = None, callback=None) -> QAction:
@@ -1710,21 +1762,10 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _show_about(self):
-        QMessageBox.about(
-            self, f"About {APP_NAME}",
-            f"<b>{APP_NAME} v{APP_VERSION}</b><br>"
-            f"<i>Quantitative Portfolio Terminal</i><br><br>"
-            f"Professional portfolio optimization and backtesting terminal.<br>"
-            f"Implements all methods from Hudson & Thames guide.<br><br>"
-            f"<b>Shortcuts:</b><br>"
-            f"Ctrl+O — Run Optimization<br>"
-            f"Ctrl+B — Run Backtest<br>"
-            f"Ctrl+I — Import CSV<br>"
-            f"Ctrl+L — Strategy Lab<br>"
-            f"Ctrl+F — Fidelity Connection<br>"
-            f"F5 — Refresh Positions<br>"
-            f"Ctrl+Q — Exit"
-        )
+        AboutDialog(self).show()
+
+    def _show_shortcuts(self):
+        ShortcutsDialog(self).show()
 
     # ── Status Bar ───────────────────────────────────────────────────
     def _setup_status_bar(self):
@@ -1752,6 +1793,11 @@ class MainWindow(QMainWindow):
         self._elapsed_label.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
         self._elapsed_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; padding: 0 8px;")
         status.addPermanentWidget(self._elapsed_label)
+
+        self._provider_status = QLabel("")
+        self._provider_status.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))
+        self._provider_status.setStyleSheet(f"color: {Colors.TEXT_MUTED}; padding: 0 8px;")
+        status.addPermanentWidget(self._provider_status)
 
         self._cache_status = QLabel("")
         self._cache_status.setFont(QFont(Fonts.MONO, Fonts.SIZE_SMALL))

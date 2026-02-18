@@ -21,8 +21,9 @@ def test_init_with_api_key():
     assert "Token tiingo-test-key" in provider._headers["Authorization"]
 
 
+@patch("portopt.utils.credentials.get_credential", return_value=None)
 @patch.dict("os.environ", {"TIINGO_API_KEY": "env-tiingo-key"})
-def test_init_from_env():
+def test_init_from_env(_mock_cred):
     """TiingoProvider reads TIINGO_API_KEY from environment."""
     provider = TiingoProvider()
     assert provider._api_key == "env-tiingo-key"

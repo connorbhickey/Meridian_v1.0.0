@@ -1,0 +1,11 @@
+symbol,name,quantity,price,cost_basis
+AAPL,Apple Inc,50,230.00,175.50
+MSFT,Microsoft Corp,40,445.00,350.00
+NVDA,NVIDIA Corp,25,890.00,480.00
+GOOGL,Alphabet Inc,30,175.00,140.00
+AMZN,Amazon.com Inc,35,200.00,155.00
+META,Meta Platforms Inc,20,560.00,320.00
+AVGO,Broadcom Inc,15,180.00,120.00
+CRM,Salesforce Inc,25,310.00,260.00
+AMD,Advanced Micro Devices,40,165.00,110.00
+ADBE,Adobe Inc,12,540.00,480.00

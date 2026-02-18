@@ -1,0 +1,11 @@
+symbol,name,quantity,price,cost_basis
+VYM,Vanguard High Dividend Yield ETF,120,120.50,108.00
+SCHD,Schwab US Dividend Equity ETF,100,82.00,72.50
+JNJ,Johnson & Johnson,45,155.00,165.00
+PG,Procter & Gamble,40,170.00,148.00
+KO,Coca-Cola Co,60,62.00,55.00
+PEP,PepsiCo Inc,35,175.00,168.00
+O,Realty Income Corp,80,56.00,62.00
+T,AT&T Inc,150,17.50,19.00
+XOM,Exxon Mobil Corp,50,110.00,95.00
+ABBV,AbbVie Inc,30,185.00,155.00

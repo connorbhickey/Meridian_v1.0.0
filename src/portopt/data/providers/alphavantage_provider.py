@@ -22,7 +22,10 @@ class AlphaVantageProvider(BaseDataProvider):
     """Data provider backed by Alpha Vantage REST API."""
 
     def __init__(self, api_key: str | None = None):
-        self._api_key = api_key or get_credential(ALPHA_VANTAGE_API_KEY) or get_alpha_vantage_key()
+        if api_key is not None:
+            self._api_key = api_key
+        else:
+            self._api_key = get_credential(ALPHA_VANTAGE_API_KEY) or get_alpha_vantage_key()
 
     @property
     def available(self) -> bool:
