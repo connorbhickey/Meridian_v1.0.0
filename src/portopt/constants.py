@@ -219,3 +219,4 @@ class PanelID(Enum):
     RISK_BUDGET = "risk_budget"
     TAX_HARVEST = "tax_harvest"
     DATA_QUALITY = "data_quality"
+    SANKEY = "sankey"

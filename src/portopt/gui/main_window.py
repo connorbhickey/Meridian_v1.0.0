@@ -41,6 +41,7 @@ from portopt.gui.panels.regime_panel import RegimePanel
 from portopt.gui.panels.risk_budget_panel import RiskBudgetPanel
 from portopt.gui.panels.tax_harvest_panel import TaxHarvestPanel
 from portopt.gui.panels.data_quality_panel import DataQualityPanel
+from portopt.gui.panels.sankey_panel import SankeyPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.copilot_controller import CopilotController
@@ -222,6 +223,7 @@ class MainWindow(QMainWindow):
         self.risk_budget_panel = RiskBudgetPanel(self)
         self.tax_harvest_panel = TaxHarvestPanel(self)
         self.data_quality_panel = DataQualityPanel(self)
+        self.sankey_panel = SankeyPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -232,7 +234,8 @@ class MainWindow(QMainWindow):
             self.scenario_panel, self.strategy_lab_panel, self.monte_carlo_panel,
             self.stress_test_panel, self.rolling_panel, self.copilot_panel,
             self.factor_panel, self.regime_panel, self.risk_budget_panel,
-            self.tax_harvest_panel, self.data_quality_panel, self.console_panel,
+            self.tax_harvest_panel, self.data_quality_panel, self.sankey_panel,
+            self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -462,6 +465,10 @@ class MainWindow(QMainWindow):
             cov=self.opt_controller._last_cov,
             result=result,
         )
+
+        # Feed Sankey rebalance flow panel
+        current = self._portfolio.weights if self._portfolio else {}
+        self.sankey_panel.set_weights(current, result.weights)
 
         # Store last result for comparison save
         self._last_opt_result = result
@@ -1353,6 +1360,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.correlation_panel, self.risk_budget_panel)
         self.tabifyDockWidget(self.correlation_panel, self.tax_harvest_panel)
         self.tabifyDockWidget(self.correlation_panel, self.data_quality_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.sankey_panel)
         self.correlation_panel.raise_()
 
         # Bottom: Console + Copilot (tabbed)
@@ -1362,6 +1370,122 @@ class MainWindow(QMainWindow):
 
         for panel in self.panels.values():
             panel.show()
+
+    # ── Layout Presets ───────────────────────────────────────────────
+
+    def _clear_layout(self):
+        """Remove all panels from dock areas and hide them."""
+        for panel in self.panels.values():
+            self.removeDockWidget(panel)
+            panel.hide()
+
+    def _layout_optimization_focus(self):
+        """Optimization Focus: Portfolio + Optimization config | Weights + Frontier | Correlation."""
+        self._clear_layout()
+
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.portfolio_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.optimization_panel)
+        self.splitDockWidget(self.portfolio_panel, self.optimization_panel, Qt.Orientation.Vertical)
+
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.weights_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.correlation_panel)
+        self.splitDockWidget(self.weights_panel, self.correlation_panel, Qt.Orientation.Horizontal)
+
+        self.tabifyDockWidget(self.weights_panel, self.frontier_panel)
+        self.tabifyDockWidget(self.weights_panel, self.sankey_panel)
+        self.weights_panel.raise_()
+
+        self.tabifyDockWidget(self.correlation_panel, self.comparison_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.scenario_panel)
+        self.correlation_panel.raise_()
+
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
+        self.tabifyDockWidget(self.console_panel, self.copilot_panel)
+        self.console_panel.raise_()
+
+        for p in [self.portfolio_panel, self.optimization_panel, self.weights_panel,
+                  self.frontier_panel, self.sankey_panel, self.correlation_panel,
+                  self.comparison_panel, self.scenario_panel, self.console_panel,
+                  self.copilot_panel]:
+            p.show()
+
+    def _layout_risk_monitor(self):
+        """Risk Monitor: Risk panel + Monte Carlo | Stress Test + Regime | Factor + Risk Budget."""
+        self._clear_layout()
+
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.risk_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.factor_panel)
+        self.splitDockWidget(self.risk_panel, self.factor_panel, Qt.Orientation.Vertical)
+
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.monte_carlo_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.regime_panel)
+        self.splitDockWidget(self.monte_carlo_panel, self.regime_panel, Qt.Orientation.Horizontal)
+
+        self.tabifyDockWidget(self.monte_carlo_panel, self.stress_test_panel)
+        self.monte_carlo_panel.raise_()
+
+        self.tabifyDockWidget(self.regime_panel, self.risk_budget_panel)
+        self.tabifyDockWidget(self.regime_panel, self.rolling_panel)
+        self.regime_panel.raise_()
+
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
+        self.console_panel.show()
+
+        for p in [self.risk_panel, self.factor_panel, self.monte_carlo_panel,
+                  self.stress_test_panel, self.regime_panel, self.risk_budget_panel,
+                  self.rolling_panel, self.console_panel]:
+            p.show()
+
+    def _layout_backtest_lab(self):
+        """Backtest Lab: Backtest config + Equity curve | Metrics + Attribution | Trade Blotter."""
+        self._clear_layout()
+
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.backtest_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.trade_blotter_panel)
+        self.splitDockWidget(self.backtest_panel, self.trade_blotter_panel, Qt.Orientation.Vertical)
+
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.metrics_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.attribution_panel)
+        self.splitDockWidget(self.metrics_panel, self.attribution_panel, Qt.Orientation.Horizontal)
+
+        self.tabifyDockWidget(self.metrics_panel, self.comparison_panel)
+        self.metrics_panel.raise_()
+
+        self.tabifyDockWidget(self.attribution_panel, self.sankey_panel)
+        self.attribution_panel.raise_()
+
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
+        self.console_panel.show()
+
+        for p in [self.backtest_panel, self.trade_blotter_panel, self.metrics_panel,
+                  self.comparison_panel, self.attribution_panel, self.sankey_panel,
+                  self.console_panel]:
+            p.show()
+
+    def _layout_trading_desk(self):
+        """Trading Desk: Portfolio + Watchlist | Price Chart | Tax Harvest + Data Quality."""
+        self._clear_layout()
+
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.portfolio_panel)
+        self.tabifyDockWidget(self.portfolio_panel, self.watchlist_panel)
+        self.portfolio_panel.raise_()
+
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.price_chart_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.tax_harvest_panel)
+        self.splitDockWidget(self.price_chart_panel, self.tax_harvest_panel, Qt.Orientation.Horizontal)
+
+        self.tabifyDockWidget(self.tax_harvest_panel, self.data_quality_panel)
+        self.tax_harvest_panel.raise_()
+
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.trade_blotter_panel)
+        self.tabifyDockWidget(self.trade_blotter_panel, self.sankey_panel)
+        self.tabifyDockWidget(self.trade_blotter_panel, self.console_panel)
+        self.trade_blotter_panel.raise_()
+
+        for p in [self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
+                  self.tax_harvest_panel, self.data_quality_panel, self.trade_blotter_panel,
+                  self.sankey_panel, self.console_panel]:
+            p.show()
 
     # ── Menu Bar ─────────────────────────────────────────────────────
     def _setup_menu_bar(self):
@@ -1408,6 +1532,14 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self._action("Focus View (default)", callback=self._setup_focus_layout))
         view_menu.addAction(self._action("Full View (all panels)", callback=self._setup_full_layout))
+        view_menu.addSeparator()
+
+        # Layout presets
+        presets_menu = view_menu.addMenu("Layout &Presets")
+        presets_menu.addAction(self._action("Optimization Focus", callback=self._layout_optimization_focus))
+        presets_menu.addAction(self._action("Risk Monitor", callback=self._layout_risk_monitor))
+        presets_menu.addAction(self._action("Backtest Lab", callback=self._layout_backtest_lab))
+        presets_menu.addAction(self._action("Trading Desk", callback=self._layout_trading_desk))
         view_menu.addSeparator()
         view_menu.addAction(self._action("&Save Current View...", "Ctrl+Shift+S", self._quick_save_layout))
         view_menu.addAction(self._action("&Manage Views...", "Ctrl+Shift+L", self._show_layout_manager))

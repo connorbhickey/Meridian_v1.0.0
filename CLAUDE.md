@@ -41,6 +41,8 @@ src/portopt/
     regime.py                # HMM regime detection + rolling vol regimes
     risk_budgeting.py        # Risk budget optimization + Euler decomposition + ERC
     tax_harvest.py           # Tax-loss harvesting candidates + replacement suggestions
+    strategy_compare.py      # Multi-method comparison + parameter sweeps + bootstrap tests
+    execution.py             # Market impact models (sqrt/linear), execution sim, capacity analysis
     network/mst.py           # Minimum Spanning Tree (takes DataFrame, NOT networkx Graph)
   backtest/
     engine.py                # BacktestEngine + BacktestConfig + BacktestOutput
@@ -66,6 +68,7 @@ src/portopt/
       risk_budget_panel.py   # Risk contribution chart + budget editor
       tax_harvest_panel.py   # Harvest candidates table + savings chart
       data_quality_panel.py  # Coverage, staleness, anomaly detection
+      sankey_panel.py        # Rebalance flow diagram (current→target weights)
       ...                    # 14 more panels (metrics, risk, frontier, etc.)
     dialogs/
       preferences_dialog.py  # Application preferences (theme, data, optimization defaults)
@@ -105,7 +108,7 @@ python -m pytest tests/engine/ -x -q   # Engine tests only
 python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 ```
 
-- 483+ tests across engine, data, backtest, and GUI layers.
+- 625+ tests across engine, data, backtest, and GUI layers.
 - `pytest-qt` must be installed separately (`pip install pytest-qt`).
 - Test fixtures are in `tests/conftest.py`.
 
@@ -117,6 +120,7 @@ See `ENHANCEMENT_PLAN.md` for the full 8-phase roadmap. Completed phases:
 - **Phase 5**: AI agent integration (Copilot panel, report generation) — **COMPLETE**
 - **Phase 2**: Data layer (FRED, Tiingo, fundamentals, price streaming, quality dashboard) — **COMPLETE**
 - **Phase 7**: Infrastructure (export, preferences, PyInstaller, CI/CD) — **COMPLETE**
+- **Phase 4+6**: Strategy comparison, execution simulation, Sankey flow, layout presets — **COMPLETE**
 
 ## Tech Stack
 
