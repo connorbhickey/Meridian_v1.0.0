@@ -20,9 +20,13 @@ src/portopt/
     importers/
       fidelity_csv.py        # Parses Fidelity CSV position exports
       generic_csv.py         # Generic CSV importer
+    quality.py               # Data quality analysis (coverage, staleness, anomalies)
     providers/
       yfinance_provider.py   # Yahoo Finance price fetcher
       alphavantage_provider.py
+      tiingo_provider.py     # Tiingo daily prices (API key required)
+      fred_provider.py       # FRED macro data (rates, CPI, VIX, etc.)
+      fundamental_provider.py  # Fundamental data (P/E, P/B, sector, market cap)
   engine/                    # Pure computation — ZERO GUI knowledge
     optimization/
       mean_variance.py       # MVO: max_sharpe, min_vol, efficient_risk/return, etc.
@@ -49,6 +53,7 @@ src/portopt/
       optimization_controller.py  # Wires GUI to engine, runs on QThreadPool
       backtest_controller.py      # Wires GUI to backtest engine
       data_controller.py          # Manages DataManager
+      price_stream_controller.py  # Real-time QTimer-based price poller
       fidelity_controller.py      # Fidelity account integration
     panels/
       base_panel.py          # BasePanel(QDockWidget) — base for all panels
@@ -60,6 +65,7 @@ src/portopt/
       regime_panel.py        # HMM regime timeline + transition matrix
       risk_budget_panel.py   # Risk contribution chart + budget editor
       tax_harvest_panel.py   # Harvest candidates table + savings chart
+      data_quality_panel.py  # Coverage, staleness, anomaly detection
       ...                    # 14 more panels (metrics, risk, frontier, etc.)
     dialogs/
       preferences_dialog.py  # Application preferences (theme, data, optimization defaults)
@@ -99,7 +105,7 @@ python -m pytest tests/engine/ -x -q   # Engine tests only
 python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 ```
 
-- 372+ tests across engine, data, backtest, and GUI layers.
+- 483+ tests across engine, data, backtest, and GUI layers.
 - `pytest-qt` must be installed separately (`pip install pytest-qt`).
 - Test fixtures are in `tests/conftest.py`.
 
@@ -109,6 +115,7 @@ See `ENHANCEMENT_PLAN.md` for the full 8-phase roadmap. Completed phases:
 - **Phase 1**: Polish & bug fixes — **COMPLETE**
 - **Phase 3**: Engine enhancements (factor models, regime detection, risk budgeting, tax harvest) — **COMPLETE**
 - **Phase 5**: AI agent integration (Copilot panel, report generation) — **COMPLETE**
+- **Phase 2**: Data layer (FRED, Tiingo, fundamentals, price streaming, quality dashboard) — **COMPLETE**
 - **Phase 7**: Infrastructure (export, preferences, PyInstaller, CI/CD) — **COMPLETE**
 
 ## Tech Stack

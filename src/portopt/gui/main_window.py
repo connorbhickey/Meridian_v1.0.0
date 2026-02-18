@@ -40,6 +40,7 @@ from portopt.gui.panels.factor_panel import FactorAnalysisPanel
 from portopt.gui.panels.regime_panel import RegimePanel
 from portopt.gui.panels.risk_budget_panel import RiskBudgetPanel
 from portopt.gui.panels.tax_harvest_panel import TaxHarvestPanel
+from portopt.gui.panels.data_quality_panel import DataQualityPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.copilot_controller import CopilotController
@@ -47,6 +48,7 @@ from portopt.gui.controllers.data_controller import DataController
 from portopt.gui.controllers.optimization_controller import OptimizationController
 from portopt.gui.controllers.backtest_controller import BacktestController
 from portopt.gui.controllers.monte_carlo_controller import MonteCarloController
+from portopt.gui.controllers.price_stream_controller import PriceStreamController
 from portopt.gui.dialogs.fidelity_login_dialog import FidelityLoginDialog
 from portopt.gui.dialogs.bl_views_dialog import BLViewsDialog
 from portopt.gui.dialogs.constraint_dialog import ConstraintDialog
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow):
         self.regime_panel = RegimePanel(self)
         self.risk_budget_panel = RiskBudgetPanel(self)
         self.tax_harvest_panel = TaxHarvestPanel(self)
+        self.data_quality_panel = DataQualityPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -229,7 +232,7 @@ class MainWindow(QMainWindow):
             self.scenario_panel, self.strategy_lab_panel, self.monte_carlo_panel,
             self.stress_test_panel, self.rolling_panel, self.copilot_panel,
             self.factor_panel, self.regime_panel, self.risk_budget_panel,
-            self.tax_harvest_panel, self.console_panel,
+            self.tax_harvest_panel, self.data_quality_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -329,6 +332,19 @@ class MainWindow(QMainWindow):
 
         # Tax harvest panel
         self.tax_harvest_panel.run_requested.connect(self._run_tax_harvest)
+
+        # Data quality panel
+        self.data_quality_panel.refresh_requested.connect(self._run_data_quality)
+
+        # Price stream controller
+        self.price_stream = PriceStreamController(self.data_controller, self)
+        self.price_stream.prices_updated.connect(self._on_prices_streamed)
+        self.price_stream.portfolio_value_updated.connect(
+            lambda v: self.set_data_status(f"Portfolio: ${v:,.0f}")
+        )
+        self.price_stream.status_changed.connect(
+            lambda msg: self.console_panel.log_info(f"Stream: {msg}")
+        )
 
         # Copilot controller
         self.copilot_controller = CopilotController(self)
@@ -796,6 +812,79 @@ class MainWindow(QMainWindow):
 
         run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
 
+    # ── Data Quality Flow ──────────────────────────────────────────────
+    def _run_data_quality(self):
+        """Run data quality analysis on current portfolio symbols."""
+        from portopt.data.quality import build_quality_report
+        from portopt.utils.threading import run_in_thread
+
+        prices = getattr(self.opt_controller, "_prices", None)
+        if prices is None or prices.empty:
+            self.console_panel.log_warning("Run optimization first to have price data for quality analysis.")
+            return
+
+        self.data_quality_panel.set_running(True)
+        self.console_panel.log_info("Analyzing data quality...")
+
+        cache_mb = self.data_controller.get_cache_size()
+
+        def _compute():
+            # Build per-symbol DataFrames from the combined close price DataFrame
+            symbol_dfs = {}
+            for col in prices.columns:
+                symbol_dfs[col] = prices[[col]].rename(columns={col: "Close"}).dropna()
+            return build_quality_report(symbol_dfs, cache_size_mb=cache_mb)
+
+        def _on_result(report):
+            self.data_quality_panel.set_running(False)
+            self.data_quality_panel.set_report(report)
+            self.console_panel.log_success(
+                f"Data quality: {report.total_symbols} symbols, "
+                f"{len(report.anomalies)} anomalies"
+            )
+
+        def _on_error(msg):
+            self.data_quality_panel.set_running(False)
+            self.console_panel.log_error(f"Data quality error: {msg}")
+
+        run_in_thread(_compute, on_result=_on_result, on_error=_on_error)
+
+    # ── Price Stream Handlers ────────────────────────────────────────
+    def _on_prices_streamed(self, prices: dict):
+        """Handle real-time price update from price stream controller."""
+        # Update watchlist with new prices
+        if hasattr(self.watchlist_panel, 'update_prices'):
+            self.watchlist_panel.update_prices(prices)
+
+        # Update portfolio panel if portfolio exists
+        if self._portfolio:
+            for h in self._portfolio.holdings:
+                if h.asset.symbol in prices:
+                    h.current_price = prices[h.asset.symbol]
+            self.portfolio_panel.set_portfolio(self._portfolio)
+
+    def _start_price_stream(self):
+        """Start real-time price streaming for current portfolio."""
+        symbols = self._get_active_symbols()
+        if not symbols:
+            self.console_panel.log_warning("No symbols to stream. Import a portfolio first.")
+            return
+
+        self.price_stream.set_symbols(symbols)
+        if self._portfolio:
+            holdings = {
+                h.asset.symbol: h.quantity
+                for h in self._portfolio.holdings
+                if h.asset.symbol in symbols
+            }
+            self.price_stream.set_holdings(holdings)
+
+        self.price_stream.start()
+
+    def _stop_price_stream(self):
+        """Stop real-time price streaming."""
+        self.price_stream.stop()
+
     # ── Copilot Flow ─────────────────────────────────────────────────
     def _on_copilot_message(self, text: str):
         """Handle user message from copilot panel."""
@@ -1079,6 +1168,8 @@ class MainWindow(QMainWindow):
         if items:
             self.ticker_bar.set_items(items)
         self._populate_watchlist_from_portfolio()
+        # Start price streaming for the new portfolio
+        self._start_price_stream()
 
     def _on_fidelity_disconnected(self):
         self.set_fidelity_status(False)
@@ -1261,6 +1352,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.correlation_panel, self.regime_panel)
         self.tabifyDockWidget(self.correlation_panel, self.risk_budget_panel)
         self.tabifyDockWidget(self.correlation_panel, self.tax_harvest_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.data_quality_panel)
         self.correlation_panel.raise_()
 
         # Bottom: Console + Copilot (tabbed)
@@ -1324,6 +1416,9 @@ class MainWindow(QMainWindow):
         data_menu = menubar.addMenu("&Data")
         data_menu.addAction(self._action("&Fidelity Connection...", "Ctrl+F", self._show_fidelity_login))
         data_menu.addAction(self._action("&Refresh Positions", "F5", self._refresh_fidelity))
+        data_menu.addSeparator()
+        data_menu.addAction(self._action("Start Price &Stream", callback=self._start_price_stream))
+        data_menu.addAction(self._action("Stop Price Strea&m", callback=self._stop_price_stream))
         data_menu.addSeparator()
 
         # Auto-refresh submenu

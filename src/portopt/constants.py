@@ -185,6 +185,8 @@ class CostModel(Enum):
 class DataSource(Enum):
     YFINANCE = auto()
     ALPHA_VANTAGE = auto()
+    TIINGO = auto()
+    FRED = auto()
     CACHE = auto()
 
 
@@ -216,3 +218,4 @@ class PanelID(Enum):
     REGIME = "regime"
     RISK_BUDGET = "risk_budget"
     TAX_HARVEST = "tax_harvest"
+    DATA_QUALITY = "data_quality"

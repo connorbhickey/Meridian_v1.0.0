@@ -13,6 +13,9 @@ from portopt.data.models import Asset
 from portopt.data.providers.base import BaseDataProvider
 from portopt.data.providers.yfinance_provider import YFinanceProvider
 from portopt.data.providers.alphavantage_provider import AlphaVantageProvider
+from portopt.data.providers.tiingo_provider import TiingoProvider
+from portopt.data.providers.fred_provider import FredProvider
+from portopt.data.providers.fundamental_provider import FundamentalProvider
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +27,20 @@ class DataManager:
         self.cache = CacheDB()
         self._primary: BaseDataProvider = YFinanceProvider()
         self._fallback: BaseDataProvider | None = None
+
+        # Build fallback chain: Tiingo > AlphaVantage
+        tiingo = TiingoProvider()
         av = AlphaVantageProvider()
-        if av.available:
+        if tiingo.available:
+            self._fallback = tiingo
+        elif av.available:
             self._fallback = av
+
+        # FRED provider for macro data
+        self._fred = FredProvider()
+
+        # Fundamental data provider
+        self._fundamental = FundamentalProvider()
 
     def get_prices(
         self, symbol: str, start: date, end: date | None = None
@@ -173,6 +187,23 @@ class DataManager:
                 logger.warning("Fallback provider also failed for %s: %s", symbol, e)
 
         return pd.DataFrame()
+
+    def get_fred_series(
+        self, series_id: str, start: date, end: date | None = None
+    ) -> pd.DataFrame:
+        """Fetch a FRED macro series. Returns OHLCV-format DataFrame."""
+        if not self._fred.available:
+            logger.warning("FRED API key not configured")
+            return pd.DataFrame()
+        return self._fred.get_prices(series_id, start, end)
+
+    def get_fundamentals(self, symbol: str):
+        """Fetch fundamental data for a symbol."""
+        return self._fundamental.get_fundamentals(symbol)
+
+    def get_multiple_fundamentals(self, symbols: list[str]):
+        """Fetch fundamentals for multiple symbols."""
+        return self._fundamental.get_multiple_fundamentals(symbols)
 
     def _fetch_with_fallback_price(self, symbol: str) -> float:
         try:
