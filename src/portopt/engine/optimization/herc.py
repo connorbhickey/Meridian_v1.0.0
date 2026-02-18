@@ -110,9 +110,9 @@ def herc_optimize(
         )
 
     # Step 5: Between-cluster allocation (equal risk contribution)
-    inv_cluster_risk = {l: 1.0 / max(r, 1e-10) for l, r in cluster_risks.items()}
+    inv_cluster_risk = {cl: 1.0 / max(r, 1e-10) for cl, r in cluster_risks.items()}
     total_inv = sum(inv_cluster_risk.values())
-    cluster_alloc = {l: v / total_inv for l, v in inv_cluster_risk.items()}
+    cluster_alloc = {cl: v / total_inv for cl, v in inv_cluster_risk.items()}
 
     # Step 6: Combine
     weights = np.zeros(n)

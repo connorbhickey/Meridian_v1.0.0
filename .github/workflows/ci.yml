@@ -6,8 +6,29 @@ on:
   pull_request:
     branches: [master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint check
+        run: ruff check src/ --select E,W --ignore E501
+
   test:
+    needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -16,12 +37,13 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -44,18 +66,35 @@ jobs:
       - name: Run backtest tests
         run: pytest tests/backtest/ -x -q --tb=short
 
-  lint:
-    runs-on: ubuntu-latest
+  build:
+    needs: test
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
+          cache: pip
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install package + PyInstaller
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install hmmlearn pyinstaller
 
-      - name: Check formatting
-        run: ruff check src/ --select E,W --ignore E501
+      - name: Build executable
+        run: pyinstaller meridian.spec --noconfirm
+
+      - name: Verify build output
+        run: |
+          if (Test-Path "dist/Meridian/Meridian.exe") { Write-Host "Build OK" } else { exit 1 }
+        shell: pwsh
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Meridian-windows
+          path: dist/Meridian/
+          retention-days: 14

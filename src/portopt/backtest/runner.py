@@ -14,8 +14,6 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-logger = logging.getLogger(__name__)
-
 from portopt.backtest.costs import BaseCostModel, ZeroCost
 from portopt.backtest.rebalancer import (
     RebalanceSchedule,
@@ -27,6 +25,8 @@ from portopt.backtest.rebalancer import (
 from portopt.backtest.results import RebalanceEvent, SingleRunResult, Trade
 from portopt.constants import CovEstimator, RebalanceFreq, ReturnEstimator
 from portopt.engine.constraints import PortfolioConstraints
+
+logger = logging.getLogger(__name__)
 
 
 # Type alias for the optimizer callback

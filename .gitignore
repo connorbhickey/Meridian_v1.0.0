@@ -50,3 +50,6 @@ CSV/
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -163,7 +163,7 @@ class AttributionPanel(BasePanel):
         self._plot_widget.addItem(bars)
 
         axis = self._plot_widget.getAxis("bottom")
-        axis.setTicks([[(i, l) for i, l in enumerate(labels)]])
+        axis.setTicks([[(i, lbl) for i, lbl in enumerate(labels)]])
         axis.setStyle(tickFont=pg.QtGui.QFont(Fonts.MONO, 8))
         self._plot_widget.setLabel("left", "Contribution (%)", color=Colors.TEXT_SECONDARY)
 

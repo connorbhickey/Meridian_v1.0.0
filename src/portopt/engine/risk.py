@@ -188,10 +188,10 @@ def nearest_positive_definite(matrix: np.ndarray) -> np.ndarray:
     if is_positive_definite(A3):
         return A3
     spacing = np.spacing(linalg.norm(matrix))
-    I = np.eye(matrix.shape[0])
+    eye = np.eye(matrix.shape[0])
     k = 1
     while not is_positive_definite(A3):
         min_eig = np.min(np.real(linalg.eigvals(A3)))
-        A3 += I * (-min_eig * k ** 2 + spacing)
+        A3 += eye * (-min_eig * k ** 2 + spacing)
         k += 1
     return A3

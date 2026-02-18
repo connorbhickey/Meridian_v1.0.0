@@ -74,7 +74,8 @@ def generate_windows(
             idx += step
             continue
 
-        to_date = lambda i: dates[i].date() if hasattr(dates[i], 'date') else dates[i]
+        def to_date(i):
+            return dates[i].date() if hasattr(dates[i], 'date') else dates[i]
 
         window = WalkForwardWindow(
             window_id=window_id,
