@@ -220,3 +220,4 @@ class PanelID(Enum):
     TAX_HARVEST = "tax_harvest"
     DATA_QUALITY = "data_quality"
     SANKEY = "sankey"
+    ORDERS = "orders"

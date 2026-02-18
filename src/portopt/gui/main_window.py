@@ -42,6 +42,7 @@ from portopt.gui.panels.risk_budget_panel import RiskBudgetPanel
 from portopt.gui.panels.tax_harvest_panel import TaxHarvestPanel
 from portopt.gui.panels.data_quality_panel import DataQualityPanel
 from portopt.gui.panels.sankey_panel import SankeyPanel
+from portopt.gui.panels.order_panel import OrderPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.copilot_controller import CopilotController
@@ -66,6 +67,9 @@ from portopt.gui.dialogs.preferences_dialog import PreferencesDialog
 from portopt.config import get_settings
 from portopt.data.importers.fidelity_csv import parse_fidelity_csv
 from portopt.data.importers.generic_csv import parse_generic_csv
+from portopt.data.importers.schwab_csv import parse_schwab_csv
+from portopt.data.importers.robinhood_csv import parse_robinhood_csv
+from portopt.data.importers.ofx_importer import parse_ofx_file
 from portopt.engine.constraints import PortfolioConstraints
 
 logger = logging.getLogger(__name__)
@@ -224,6 +228,7 @@ class MainWindow(QMainWindow):
         self.tax_harvest_panel = TaxHarvestPanel(self)
         self.data_quality_panel = DataQualityPanel(self)
         self.sankey_panel = SankeyPanel(self)
+        self.order_panel = OrderPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -235,7 +240,7 @@ class MainWindow(QMainWindow):
             self.stress_test_panel, self.rolling_panel, self.copilot_panel,
             self.factor_panel, self.regime_panel, self.risk_budget_panel,
             self.tax_harvest_panel, self.data_quality_panel, self.sankey_panel,
-            self.console_panel,
+            self.order_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -338,6 +343,10 @@ class MainWindow(QMainWindow):
 
         # Data quality panel
         self.data_quality_panel.refresh_requested.connect(self._run_data_quality)
+
+        # Order panel
+        self.order_panel.generate_requested.connect(self._generate_orders)
+        self.order_panel.send_to_blotter.connect(self.trade_blotter_panel.set_trades)
 
         # Price stream controller
         self.price_stream = PriceStreamController(self.data_controller, self)
@@ -1208,28 +1217,109 @@ class MainWindow(QMainWindow):
         label = f"{minutes} min" if minutes > 0 else "off"
         self.console_panel.log_info(f"Fidelity auto-refresh: {label}")
 
-    # ── CSV Import ───────────────────────────────────────────────────
+    # ── File Import ──────────────────────────────────────────────────
     def _import_csv(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import Portfolio CSV", "",
-            "CSV Files (*.csv);;All Files (*)",
+            self, "Import Portfolio", "",
+            "All Supported (*.csv *.ofx *.qfx);;CSV Files (*.csv);;OFX/QFX Files (*.ofx *.qfx);;All Files (*)",
         )
         if not path:
             return
         try:
-            try:
-                portfolio = parse_fidelity_csv(path)
-                self.console_panel.log_success(f"Imported Fidelity CSV: {len(portfolio.holdings)} positions")
-            except Exception:
-                portfolio = parse_generic_csv(path)
-                self.console_panel.log_success(f"Imported CSV: {len(portfolio.holdings)} positions")
+            lower = path.lower()
+            if lower.endswith((".ofx", ".qfx")):
+                portfolio = parse_ofx_file(path)
+                self.console_panel.log_success(
+                    f"Imported OFX: {len(portfolio.holdings)} positions"
+                )
+            else:
+                portfolio = self._try_csv_parsers(path)
 
             self._portfolio = portfolio
             self.portfolio_panel.set_portfolio(portfolio)
             self.portfolio_panel.show()
             self.portfolio_panel.raise_()
         except Exception as e:
-            self.console_panel.log_error(f"CSV import failed: {e}")
+            self.console_panel.log_error(f"Import failed: {e}")
+
+    def _try_csv_parsers(self, path: str):
+        """Try brokerage-specific CSV parsers, fall back to generic."""
+        parsers = [
+            (parse_fidelity_csv, "Fidelity"),
+            (parse_schwab_csv, "Schwab"),
+            (parse_robinhood_csv, "Robinhood"),
+        ]
+        for parser, name in parsers:
+            try:
+                portfolio = parser(path)
+                if portfolio.holdings:
+                    self.console_panel.log_success(
+                        f"Imported {name} CSV: {len(portfolio.holdings)} positions"
+                    )
+                    return portfolio
+            except Exception:
+                continue
+        portfolio = parse_generic_csv(path)
+        self.console_panel.log_success(
+            f"Imported CSV: {len(portfolio.holdings)} positions"
+        )
+        return portfolio
+
+    # ── Order Generation ─────────────────────────────────────────────
+    def _generate_orders(self):
+        """Generate trade orders from current portfolio and last optimization result."""
+        result = getattr(self, "_last_opt_result", None)
+        if result is None:
+            self.console_panel.log_warning("Run an optimization first to generate orders.")
+            return
+        if self._portfolio is None:
+            self.console_panel.log_warning("Load a portfolio first to generate orders.")
+            return
+
+        from portopt.engine.order_manager import generate_rebalance_orders, OrderType
+
+        order_type_str = self.order_panel.order_type
+        order_type = OrderType.LIMIT if order_type_str == "limit" else OrderType.MARKET
+
+        try:
+            batch = generate_rebalance_orders(
+                self._portfolio,
+                result,
+                order_type=order_type,
+                limit_offset_pct=0.5,
+            )
+            # Convert to display dicts
+            order_dicts = []
+            for o in batch.orders:
+                order_dicts.append({
+                    "symbol": o.symbol,
+                    "side": o.side,
+                    "quantity": o.quantity,
+                    "price": o.filled_avg_price if o.filled_avg_price else (o.limit_price or 0),
+                    "limit_price": o.limit_price,
+                    "value": o.quantity * (o.limit_price or o.estimated_cost or 0),
+                    "estimated_cost": o.estimated_cost,
+                    "status": o.status.value,
+                    "weight_after": result.weights.get(o.symbol, 0),
+                })
+
+            batch_stats = {
+                "total_buy_value": batch.total_buy_value,
+                "total_sell_value": batch.total_sell_value,
+                "net_cash_flow": batch.net_cash_flow,
+                "total_estimated_cost": batch.total_estimated_cost,
+                "turnover": batch.turnover,
+            }
+
+            self.order_panel.set_orders(order_dicts, batch_stats)
+            self.order_panel.show()
+            self.order_panel.raise_()
+            self.console_panel.log_success(
+                f"Generated {len(batch.orders)} orders | "
+                f"Turnover: {batch.turnover:.1%}"
+            )
+        except Exception as e:
+            self.console_panel.log_error(f"Order generation failed: {e}")
 
     # ── Helpers ───────────────────────────────────────────────────────
     def _on_watchlist_add(self, symbol: str):
@@ -1362,6 +1452,9 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.correlation_panel, self.data_quality_panel)
         self.tabifyDockWidget(self.correlation_panel, self.sankey_panel)
         self.correlation_panel.raise_()
+
+        # Orders tabbed with trade blotter
+        self.tabifyDockWidget(self.trade_blotter_panel, self.order_panel)
 
         # Bottom: Console + Copilot (tabbed)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.console_panel)
@@ -1514,7 +1607,7 @@ class MainWindow(QMainWindow):
 
         # File
         file_menu = menubar.addMenu("&File")
-        file_menu.addAction(self._action("&Import CSV...", "Ctrl+I", self._import_csv))
+        file_menu.addAction(self._action("&Import Portfolio...", "Ctrl+I", self._import_csv))
         file_menu.addSeparator()
         file_menu.addAction(self._action("E&xport...", "Ctrl+Shift+E", self._show_export))
         file_menu.addSeparator()
