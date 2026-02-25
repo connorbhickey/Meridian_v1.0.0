@@ -45,6 +45,7 @@ from portopt.gui.panels.sankey_panel import SankeyPanel
 from portopt.gui.panels.order_panel import OrderPanel
 from portopt.gui.panels.transaction_panel import TransactionPanel
 from portopt.gui.panels.balance_panel import BalancePanel
+from portopt.gui.panels.prediction_panel import PredictionPanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
 from portopt.gui.controllers.plaid_controller import PlaidController
@@ -53,6 +54,7 @@ from portopt.gui.controllers.data_controller import DataController
 from portopt.gui.controllers.optimization_controller import OptimizationController
 from portopt.gui.controllers.backtest_controller import BacktestController
 from portopt.gui.controllers.monte_carlo_controller import MonteCarloController
+from portopt.gui.controllers.prediction_controller import PredictionController
 from portopt.gui.controllers.price_stream_controller import PriceStreamController
 from portopt.gui.dialogs.fidelity_login_dialog import FidelityLoginDialog
 from portopt.gui.dialogs.bl_views_dialog import BLViewsDialog
@@ -282,6 +284,7 @@ class MainWindow(QMainWindow):
         self.order_panel = OrderPanel(self)
         self.transaction_panel = TransactionPanel(self)
         self.balance_panel = BalancePanel(self)
+        self.prediction_panel = PredictionPanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -294,7 +297,7 @@ class MainWindow(QMainWindow):
             self.factor_panel, self.regime_panel, self.risk_budget_panel,
             self.tax_harvest_panel, self.data_quality_panel, self.sankey_panel,
             self.order_panel, self.transaction_panel, self.balance_panel,
-            self.console_panel,
+            self.prediction_panel, self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -453,6 +456,29 @@ class MainWindow(QMainWindow):
         )
         self.copilot_controller.response_complete.connect(self._on_copilot_response)
         self.copilot_controller.error.connect(self.copilot_panel.show_error)
+
+        # Prediction controller
+        self.prediction_controller = PredictionController(
+            data_controller=self.data_controller, parent=self,
+        )
+        self.prediction_panel.run_requested.connect(
+            self.prediction_controller.run_prediction
+        )
+        self.prediction_controller.prediction_complete.connect(
+            self.prediction_panel.set_result
+        )
+        self.prediction_controller.running_changed.connect(
+            self.prediction_panel.set_running
+        )
+        self.prediction_controller.status_changed.connect(
+            self.prediction_panel.set_status
+        )
+        self.prediction_controller.status_changed.connect(
+            lambda msg: self.console_panel.log_info(f"Prediction: {msg}")
+        )
+        self.prediction_controller.error.connect(
+            lambda msg: self.console_panel.log_error(f"Prediction error: {msg}")
+        )
 
         # Strategy Lab: own controllers (isolated from main portfolio)
         self._lab_opt_controller = OptimizationController(self.data_controller, self)
@@ -1619,6 +1645,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.correlation_panel, self.tax_harvest_panel)
         self.tabifyDockWidget(self.correlation_panel, self.data_quality_panel)
         self.tabifyDockWidget(self.correlation_panel, self.sankey_panel)
+        self.tabifyDockWidget(self.correlation_panel, self.prediction_panel)
         self.correlation_panel.raise_()
 
         # Orders tabbed with trade blotter
@@ -1850,6 +1877,7 @@ class MainWindow(QMainWindow):
         # AI
         ai_menu = menubar.addMenu("&AI")
         ai_menu.addAction(self._action("&Copilot", "Ctrl+Shift+A", self._show_copilot))
+        ai_menu.addAction(self._action("Stock &Predictor", "Ctrl+Shift+P", self._show_prediction))
         ai_menu.addAction(self._action("&API Key...", callback=self._show_api_key_dialog))
         ai_menu.addSeparator()
         ai_menu.addAction(self._action("Generate &Report...", "Ctrl+R", self._show_report_dialog))
@@ -1872,6 +1900,11 @@ class MainWindow(QMainWindow):
         """Show and raise the Strategy Lab panel."""
         self.strategy_lab_panel.show()
         self.strategy_lab_panel.raise_()
+
+    def _show_prediction(self):
+        """Show and raise the Stock Predictor panel."""
+        self.prediction_panel.show()
+        self.prediction_panel.raise_()
 
     def _quick_save_layout(self):
         """Quick-save current panel arrangement as a named view."""

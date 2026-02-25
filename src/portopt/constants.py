@@ -223,3 +223,4 @@ class PanelID(Enum):
     ORDERS = "orders"
     TRANSACTIONS = "transactions"
     ACCOUNT_BALANCES = "account_balances"
+    PREDICTION = "prediction"

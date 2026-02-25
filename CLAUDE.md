@@ -5,7 +5,7 @@
 ```bash
 python -m portopt.app          # Launch the GUI
 python -m portopt.app --check  # Validate installation
-python -m pytest tests/ -x -q  # Run all tests (945+)
+python -m pytest tests/ -x -q  # Run all tests (1130+)
 ```
 
 ## Project Structure
@@ -54,6 +54,12 @@ src/portopt/                   # 107 Python source files
     order_manager.py           # Trade order generation from optimization deltas
     constraints.py             # PortfolioConstraints dataclass
     network/mst.py             # Minimum Spanning Tree (takes DataFrame, NOT Graph)
+    prediction/
+      prng.py                  # Deterministic PRNG (Park-Miller LCG, Box-Muller, Gamma, Student-t)
+      monte_carlo.py           # Merton Jump-Diffusion simulator + histogram + prob_above
+      signals.py               # 19 factor signal functions (momentum, value, quality, macro, etc.)
+      ensemble.py              # 25-method ensemble: J-S shrinkage, bootstrap CI, Kelly, prediction intervals
+      data_provider.py         # YFinance + FRED data assembly (~2-3s, replaces Anthropic API)
   backtest/
     engine.py                  # BacktestEngine + BacktestConfig + BacktestOutput
     runner.py                  # Core execution loop (step through time, rebalance)
@@ -65,14 +71,15 @@ src/portopt/                   # 107 Python source files
     main_window.py             # MainWindow — creates all panels, controllers, layouts
     theme.py                   # Dark "deep-space" theme stylesheet
     dock_manager.py            # Save/restore dock layouts (method: list_layouts())
-    controllers/               # 6 controllers
+    controllers/               # 7 controllers
       optimization_controller.py  # Wires GUI to engine, runs on QThreadPool
       backtest_controller.py      # Wires GUI to backtest engine
       data_controller.py          # Manages DataManager
       price_stream_controller.py  # Real-time QTimer-based price poller
       fidelity_controller.py      # Fidelity account integration
+      prediction_controller.py    # Stock prediction ensemble (background thread)
       plaid_controller.py         # Plaid Link flow + transaction sync
-    panels/                    # 32 panels (+ base_panel.py + __init__.py)
+    panels/                    # 33 panels (+ base_panel.py + __init__.py)
       base_panel.py            # BasePanel(QDockWidget) — base for all panels
       portfolio_panel.py       # Positions table with P&L coloring
       optimization_panel.py    # Optimization config controls
@@ -87,6 +94,7 @@ src/portopt/                   # 107 Python source files
       order_panel.py           # Trade order generation and review
       attribution_panel.py     # Return attribution
       copilot_panel.py         # AI assistant panel
+      prediction_panel.py      # 25-method stock predictor (5 tabs: Summary/Methods/MC/Signals/Stats)
       monte_carlo_panel.py     # Monte Carlo simulation
       stress_test_panel.py     # Stress testing scenarios
       frontier_panel.py        # Interactive efficient frontier
@@ -184,7 +192,7 @@ python -m pytest tests/backtest/ -x -q # Backtest tests
 python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 ```
 
-- 945+ tests across engine, data, backtest, and GUI layers.
+- 1130+ tests across engine, data, backtest, and GUI layers.
 - `pytest-qt` must be installed separately for GUI tests.
 - `hmmlearn` must be installed separately for regime detection tests.
 - Test fixtures are in `tests/conftest.py`.
