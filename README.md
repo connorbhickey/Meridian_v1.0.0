@@ -2,7 +2,7 @@
 
 **Professional Portfolio Terminal** — quantitative optimization, walk-forward backtesting, and risk analytics in a single desktop app.
 
-Built with Python + PySide6. Dark "deep-space" theme with 30 dockable panels.
+Built with Python + PySide6. Dark "deep-space" theme with 33 dockable panels.
 
 ![CI](https://github.com/connorbhickey/Meridian_v1.0.0/actions/workflows/ci.yml/badge.svg)
 
@@ -14,12 +14,13 @@ Built with Python + PySide6. Dark "deep-space" theme with 30 dockable panels.
 |----------|-------------|
 | **Optimization** | Mean-Variance (max Sharpe, min vol, efficient frontier), HRP, HERC, Black-Litterman, TIC, Risk Budgeting, inverse variance — 14 methods total |
 | **Backtesting** | Walk-forward analysis, configurable rebalance frequency, 6 transaction cost models, benchmark comparison, out-of-sample validation |
+| **Prediction** | 25-method ensemble stock predictor — Merton Jump-Diffusion Monte Carlo, James-Stein shrinkage, Kelly criterion, bootstrap CI, vol-adaptive signal scaling |
 | **Risk** | Factor analysis (Fama-French 3-factor), HMM regime detection, Monte Carlo simulation (parametric GBM + block bootstrap), stress testing |
 | **Tax & Execution** | Tax-loss harvesting with replacement suggestions, multi-account asset location, market impact models, trade order generation |
 | **Data** | Yahoo Finance (free, no key), Tiingo, Alpha Vantage, FRED macro data — with SQLite caching and automatic retry on network failures |
 | **Import** | Fidelity, Schwab, Robinhood CSV + OFX/QFX files — auto-detected format |
 | **AI** | Claude-powered copilot chat, portfolio report generation, natural language analysis |
-| **Interface** | 30 dockable panels, Bloomberg-style tiling, save/restore layouts, CSV/JSON/Excel/PNG export |
+| **Interface** | 33 dockable panels, Bloomberg-style tiling, save/restore layouts, CSV/JSON/Excel/PNG export |
 
 ---
 
@@ -54,7 +55,8 @@ python -m portopt.app --check
 2. **Load a sample** — File > Load Sample (Balanced 60/40, Tech Growth, or Dividend Income)
 3. **Optimize** — Ctrl+O to open optimization panel, select method, click Run
 4. **Backtest** — Ctrl+B to configure and run walk-forward backtest
-5. **Explore** — dock and arrange any of the 30 panels to build your workspace
+5. **Predict** — AI > Stock Predictor (Ctrl+Shift+P) to run 25-method ensemble forecasts
+6. **Explore** — dock and arrange any of the 33 panels to build your workspace
 
 ### Sample Portfolios
 
@@ -93,6 +95,7 @@ Yahoo Finance provides free price data with no API key. Tiingo and Alpha Vantage
 | `Ctrl+Shift+E` | Export data |
 | `Ctrl+R` | Generate AI report |
 | `Ctrl+Shift+A` | Open AI Copilot |
+| `Ctrl+Shift+P` | Stock Predictor |
 | `Ctrl+F` | Fidelity auto-import |
 | `F1` | Show all shortcuts |
 | `Ctrl+Q` | Exit |
@@ -118,6 +121,7 @@ src/portopt/
     strategy_compare.py      # Multi-method comparison + parameter sweeps
     execution.py             # Market impact models (sqrt/linear) + capacity analysis
     network/mst.py           # Minimum Spanning Tree network graph
+    prediction/              # 25-method ensemble stock predictor (MJD, signals, J-S, Kelly)
   data/
     providers/               # YFinance, Tiingo, AlphaVantage, FRED, Fundamentals
     importers/               # Fidelity, Schwab, Robinhood CSV, OFX/QFX, Generic
@@ -126,8 +130,8 @@ src/portopt/
     quality.py               # Data quality (coverage, staleness, anomalies)
   backtest/                  # Engine, runner, walk-forward, costs, rebalancer
   gui/
-    panels/                  # 30 panels (portfolio, frontier, correlation, ...)
-    controllers/             # 5 controllers (optimization, backtest, data, ...)
+    panels/                  # 33 panels (portfolio, frontier, correlation, prediction, ...)
+    controllers/             # 7 controllers (optimization, backtest, data, prediction, ...)
     dialogs/                 # 12 dialogs (API keys, preferences, export, ...)
     theme.py                 # Dark "deep-space" stylesheet
     dock_manager.py          # Save/restore panel layouts
@@ -148,14 +152,14 @@ src/portopt/
 ## Testing
 
 ```bash
-python -m pytest tests/ -x -q          # All 1012 tests
+python -m pytest tests/ -x -q          # All 1131 tests
 python -m pytest tests/engine/ -x -q   # Engine (optimization, metrics, risk)
 python -m pytest tests/data/ -x -q     # Data layer (providers, cache, importers)
 python -m pytest tests/backtest/ -x -q # Backtesting engine
 python -m pytest tests/gui/ -x -q      # GUI integration + stress tests
 ```
 
-**Coverage:** 1012 tests across engine, data, backtest, and GUI layers — including integration tests for full controller signal chains and stress tests with 500+ holdings.
+**Coverage:** 1131 tests across engine, data, backtest, and GUI layers — including integration tests for full controller signal chains, stress tests with 500+ holdings, and 119 prediction engine tests.
 
 ---
 
@@ -167,7 +171,7 @@ python -m pytest tests/gui/ -x -q      # GUI integration + stress tests
 
 ```bash
 # Trigger a release
-git tag -a v1.0.3 -m "v1.0.3" && git push origin v1.0.3
+git tag v2.1.2 && git push origin v2.1.2
 ```
 
 ---

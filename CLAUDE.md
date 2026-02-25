@@ -11,7 +11,7 @@ python -m pytest tests/ -x -q  # Run all tests (1130+)
 ## Project Structure
 
 ```
-src/portopt/                   # 107 Python source files
+src/portopt/                   # 115 Python source files
   app.py                       # Entry point — launches QApplication + MainWindow
   constants.py                 # Enums (OptMethod, CovEstimator, etc.), Colors, Fonts
   config.py                    # QSettings (INI format via get_settings())
@@ -123,7 +123,7 @@ meridian.spec                  # PyInstaller spec file
 .github/workflows/
   ci.yml                       # lint -> test -> build (pinned SHAs)
   release.yml                  # Semantic version tag -> GitHub Release
-tests/                         # 44 test files, 945+ tests
+tests/                         # 47 test files, 1131+ tests
   conftest.py                  # Shared fixtures
   engine/                      # Engine tests
   data/                        # Data layer tests
@@ -216,6 +216,30 @@ python scripts/build.py                # Wrapper script
 - plaid-python for financial account linking
 
 ## Changelog
+
+### v2.1.1 (2026-02-25)
+
+**New Features:**
+- Stock Predictor panel — 25-method quantitative ensemble (AI > Stock Predictor, Ctrl+Shift+P)
+  - Merton Jump-Diffusion Monte Carlo with Student-t fat tails
+  - 19 factor signals (momentum, value, quality, macro, PEAD, seasonality, etc.)
+  - James-Stein shrinkage, bootstrap CI, Kelly criterion, decomposed prediction intervals
+  - Vol-adaptive signal scaling for all volatility regimes
+  - YFinance + FRED data provider (~2-3s latency, replaces Anthropic API web-search)
+  - 5-tab panel: Summary, Methods, Monte Carlo, Signals, Statistics
+- Prediction controller with background threading via QThreadPool
+- 119 new tests for prediction engine (PRNG, MC, signals, ensemble, integration)
+
+### v1.0.2 (2025-02-25)
+
+**New Features:**
+- Retry logic with exponential backoff for network failures (`utils/retry.py`)
+- NSIS installer for proper Windows Setup.exe distribution
+- Integration tests for controller signal chains (21 new)
+- Stress tests with 500+ holdings and 20-asset backtests (25 new)
+
+**Bug Fixes:**
+- Fixed NSIS version override with `!ifndef` guard
 
 ### v1.0.1 (2025-02-24)
 
