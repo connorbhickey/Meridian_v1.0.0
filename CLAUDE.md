@@ -5,13 +5,13 @@
 ```bash
 python -m portopt.app          # Launch the GUI
 python -m portopt.app --check  # Validate installation
-python -m pytest tests/ -x -q  # Run all tests (842+)
+python -m pytest tests/ -x -q  # Run all tests (945+)
 ```
 
 ## Project Structure
 
 ```
-src/portopt/                   # 98 Python source files
+src/portopt/                   # 107 Python source files
   app.py                       # Entry point — launches QApplication + MainWindow
   constants.py                 # Enums (OptMethod, CovEstimator, etc.), Colors, Fonts
   config.py                    # QSettings (INI format via get_settings())
@@ -26,12 +26,14 @@ src/portopt/                   # 98 Python source files
       robinhood_csv.py         # Robinhood CSV position export parser
       ofx_importer.py          # OFX/QFX SGML file parser (regex, not XML)
       generic_csv.py           # Generic CSV importer (fallback)
+      fidelity_auto.py         # Fidelity automated transaction fetcher
     providers/
       yfinance_provider.py     # Yahoo Finance (free, no API key)
       tiingo_provider.py       # Tiingo daily prices (API key required)
       alphavantage_provider.py # Alpha Vantage (API key required)
       fred_provider.py         # FRED macro data (rates, CPI, VIX)
       fundamental_provider.py  # Fundamental data (P/E, P/B, sector, market cap)
+      plaid_client.py          # Plaid API client for account linking + transactions
   engine/                      # Pure computation — ZERO GUI knowledge
     optimization/
       mean_variance.py         # MVO: max_sharpe, min_vol, efficient_risk/return, etc.
@@ -63,13 +65,14 @@ src/portopt/                   # 98 Python source files
     main_window.py             # MainWindow — creates all panels, controllers, layouts
     theme.py                   # Dark "deep-space" theme stylesheet
     dock_manager.py            # Save/restore dock layouts (method: list_layouts())
-    controllers/               # 5 controllers
+    controllers/               # 6 controllers
       optimization_controller.py  # Wires GUI to engine, runs on QThreadPool
       backtest_controller.py      # Wires GUI to backtest engine
       data_controller.py          # Manages DataManager
       price_stream_controller.py  # Real-time QTimer-based price poller
       fidelity_controller.py      # Fidelity account integration
-    panels/                    # 30 panels (+ base_panel.py + __init__.py)
+      plaid_controller.py         # Plaid Link flow + transaction sync
+    panels/                    # 32 panels (+ base_panel.py + __init__.py)
       base_panel.py            # BasePanel(QDockWidget) — base for all panels
       portfolio_panel.py       # Positions table with P&L coloring
       optimization_panel.py    # Optimization config controls
@@ -88,8 +91,10 @@ src/portopt/                   # 98 Python source files
       stress_test_panel.py     # Stress testing scenarios
       frontier_panel.py        # Interactive efficient frontier
       rolling_panel.py         # Rolling analytics
+      balance_panel.py         # Multi-account balance overview
+      transaction_panel.py     # Transaction history with filtering
       # + 12 more panels (metrics, risk, correlation, dendrogram, etc.)
-    dialogs/                   # 12 dialogs
+    dialogs/                   # 13 dialogs
       api_key_dialog.py        # Manage Anthropic, FRED, Tiingo, AV keys
       preferences_dialog.py    # Application preferences
       export_dialog.py         # Multi-format export (CSV, JSON, Excel, PNG)
@@ -98,6 +103,7 @@ src/portopt/                   # 98 Python source files
       constraint_dialog.py     # Portfolio constraints editor
       welcome_dialog.py        # First-launch wizard
       about_dialog.py          # About/version info
+      plaid_link_dialog.py     # Plaid Link account connection flow
       # + 4 more dialogs
   utils/
     threading.py               # run_in_thread() — QThreadPool wrapper
@@ -109,7 +115,7 @@ meridian.spec                  # PyInstaller spec file
 .github/workflows/
   ci.yml                       # lint -> test -> build (pinned SHAs)
   release.yml                  # Semantic version tag -> GitHub Release
-tests/                         # 38 test files, 842+ tests
+tests/                         # 44 test files, 945+ tests
   conftest.py                  # Shared fixtures
   engine/                      # Engine tests
   data/                        # Data layer tests
@@ -144,6 +150,9 @@ tests/                         # 38 test files, 842+ tests
 - **OFX is SGML, not XML** — use regex extraction, not XML parser.
 - **Schwab CSV multi-account** — sections separated by "Positions for account" header lines.
 - **Holding.weight** — uses `_weight` field + property setter (was always 0.0 before fix).
+- **YFinance single-ticker `group_by="ticker"`** returns MultiIndex columns `('SYM', 'Close')` instead of flat `'Close'` — must extract sub-DataFrame via `data[sym]` for single-ticker downloads.
+- **`data_controller.current_price_loaded` signal** must be connected in MainWindow for watchlist price updates to work.
+- **PyQtGraph time-series charts** require `pg.DateAxisItem(orientation="bottom")` — without it, epoch timestamps display as raw floats.
 
 ## Environment Variables / API Keys
 
@@ -155,6 +164,8 @@ Stored in OS keyring via `utils/credentials.py`. Managed in-app via **AI > API K
 | `fred_api_key` | FRED macro data | Optional |
 | `tiingo_api_key` | Tiingo price provider | Optional |
 | `alpha_vantage_api_key` | Alpha Vantage price provider | Optional |
+| `plaid_client_id` | Plaid account linking | For account integration |
+| `plaid_secret` | Plaid account linking | For account integration |
 
 ## CI/CD
 
@@ -173,7 +184,7 @@ python -m pytest tests/backtest/ -x -q # Backtest tests
 python -m pytest tests/gui/ -x -q      # GUI tests (needs pytest-qt)
 ```
 
-- 842+ tests across engine, data, backtest, and GUI layers.
+- 945+ tests across engine, data, backtest, and GUI layers.
 - `pytest-qt` must be installed separately for GUI tests.
 - `hmmlearn` must be installed separately for regime detection tests.
 - Test fixtures are in `tests/conftest.py`.
@@ -194,3 +205,30 @@ python scripts/build.py                # Wrapper script
 - anthropic SDK + jinja2 for AI Copilot and reports
 - networkx for MST graph analysis
 - yfinance for primary market data (free, no key)
+- plaid-python for financial account linking
+
+## Changelog
+
+### v1.0.1 (2025-02-24)
+
+**New Features:**
+- Financial account integration via Plaid (account linking, transaction sync, balance tracking)
+- Fidelity automated transaction fetcher
+- Balance overview panel (multi-account)
+- Transaction history panel with filtering
+- Plaid Link dialog for account connection flow
+- Plaid controller for Link flow + transaction sync
+
+**Bug Fixes:**
+- Fixed dual window on launch (`python.exe` -> `pythonw.exe` in `meridian.bat`)
+- Fixed YFinance single-ticker MultiIndex column bug that broke all data loading (cache, optimization, backtest, watchlist)
+- Connected `data_controller.current_price_loaded` signal to watchlist panel for live price updates
+- Added `pg.DateAxisItem` to price chart, strategy lab equity curve, and regime timeline panels for proper date X-axis display
+
+### v1.0.0
+
+- Initial release with 30 panels, 12 dialogs, 5 controllers
+- Full portfolio optimization suite (MVO, HRP, HERC, Black-Litterman, TIC)
+- Backtesting engine with walk-forward analysis
+- AI Copilot + report generation
+- Multi-provider data system (YFinance, Tiingo, Alpha Vantage, FRED)
