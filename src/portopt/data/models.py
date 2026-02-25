@@ -146,6 +146,103 @@ class Portfolio:
         return None
 
 
+# ── Financial Account / Transaction Models ───────────────────────────
+
+
+class TransactionStatus(Enum):
+    PENDING = auto()
+    POSTED = auto()
+    REMOVED = auto()
+
+
+class TransactionType(Enum):
+    DEBIT = auto()
+    CREDIT = auto()
+
+
+class PlaidAccountType(Enum):
+    CHECKING = auto()
+    SAVINGS = auto()
+    CREDIT_CARD = auto()
+    BROKERAGE = auto()
+    IRA = auto()
+    CASH_MANAGEMENT = auto()
+    OTHER = auto()
+
+
+class TransactionSource(Enum):
+    PLAID = auto()
+    FIDELITY = auto()
+
+
+@dataclass
+class Transaction:
+    """A financial transaction from any source (Plaid or Fidelity)."""
+    transaction_id: str
+    account_id: str
+    account_name: str = ""
+    date: date | None = None
+    authorized_date: date | None = None
+    amount: float = 0.0                # Signed: positive=debit, negative=credit
+    merchant_name: str = ""
+    name: str = ""                     # Transaction description
+    category: str = ""
+    status: TransactionStatus = TransactionStatus.POSTED
+    pending: bool = False
+    institution_name: str = ""
+    source: TransactionSource = TransactionSource.PLAID
+    iso_currency_code: str = "USD"
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def display_amount(self) -> str:
+        """Formatted amount: debit as -$X.XX, credit as +$X.XX."""
+        if self.amount >= 0:
+            return f"-${self.amount:,.2f}"
+        return f"+${abs(self.amount):,.2f}"
+
+    @property
+    def is_credit(self) -> bool:
+        return self.amount < 0
+
+
+@dataclass
+class PlaidAccount:
+    """A financial account linked via Plaid."""
+    account_id: str
+    item_id: str = ""
+    institution_name: str = ""
+    name: str = ""
+    official_name: str = ""
+    account_type: PlaidAccountType = PlaidAccountType.OTHER
+    subtype: str = ""
+    mask: str = ""                     # Last 4 digits
+    current_balance: float = 0.0
+    available_balance: float | None = None
+    limit: float | None = None         # Credit limit
+    last_synced: datetime | None = None
+
+    @property
+    def display_name(self) -> str:
+        if self.official_name:
+            return f"{self.official_name} (***{self.mask})" if self.mask else self.official_name
+        if self.name:
+            return f"{self.name} (***{self.mask})" if self.mask else self.name
+        return f"Account ***{self.mask}" if self.mask else self.account_id
+
+
+@dataclass
+class PlaidItem:
+    """A linked institution in Plaid (one Item = one bank/institution)."""
+    item_id: str
+    institution_id: str = ""
+    institution_name: str = ""
+    accounts: list[PlaidAccount] = field(default_factory=list)
+    last_synced: datetime | None = None
+    sync_cursor: str = ""              # For /transactions/sync incremental updates
+    error: str = ""
+
+
 @dataclass
 class OptimizationResult:
     """Result of a portfolio optimization run."""

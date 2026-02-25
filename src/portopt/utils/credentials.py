@@ -52,3 +52,11 @@ ANTHROPIC_API_KEY = "anthropic_api_key"
 FRED_API_KEY = "fred_api_key"
 TIINGO_API_KEY = "tiingo_api_key"
 ALPHA_VANTAGE_API_KEY = "alpha_vantage_api_key"
+PLAID_CLIENT_ID = "plaid_client_id"
+PLAID_SECRET = "plaid_secret"
+PLAID_ENVIRONMENT = "plaid_environment"
+
+
+def plaid_access_token_key(item_id: str) -> str:
+    """Return the keyring key for a Plaid access token (one per linked institution)."""
+    return f"plaid_access_token_{item_id}"

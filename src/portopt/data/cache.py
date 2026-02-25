@@ -66,6 +66,54 @@ class CacheDB:
                 data TEXT,  -- JSON serialized
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS plaid_items (
+                item_id TEXT PRIMARY KEY,
+                institution_id TEXT,
+                institution_name TEXT,
+                sync_cursor TEXT DEFAULT '',
+                last_synced TEXT,
+                error TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS plaid_accounts (
+                account_id TEXT PRIMARY KEY,
+                item_id TEXT,
+                institution_name TEXT,
+                name TEXT,
+                official_name TEXT,
+                account_type TEXT,
+                subtype TEXT,
+                mask TEXT,
+                current_balance REAL DEFAULT 0,
+                available_balance REAL,
+                credit_limit REAL,
+                last_synced TEXT,
+                FOREIGN KEY (item_id) REFERENCES plaid_items(item_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS transactions (
+                transaction_id TEXT PRIMARY KEY,
+                account_id TEXT,
+                account_name TEXT,
+                date TEXT,
+                authorized_date TEXT,
+                amount REAL,
+                merchant_name TEXT,
+                name TEXT,
+                category TEXT,
+                status TEXT,
+                pending INTEGER DEFAULT 0,
+                institution_name TEXT,
+                source TEXT,
+                iso_currency_code TEXT DEFAULT 'USD',
+                metadata TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_txn_account ON transactions(account_id);
+            CREATE INDEX IF NOT EXISTS idx_txn_date ON transactions(date);
+            CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions(status);
+            CREATE INDEX IF NOT EXISTS idx_txn_source ON transactions(source);
         """)
         c.commit()
 
@@ -149,6 +197,148 @@ class CacheDB:
             (name,),
         ).fetchone()
         return json.loads(row["data"]) if row else None
+
+    # ── Plaid Items ──────────────────────────────────────────────────
+    def upsert_plaid_item(self, item_id: str, institution_id: str = "",
+                          institution_name: str = "", sync_cursor: str = "",
+                          error: str = ""):
+        self.conn.execute(
+            "INSERT OR REPLACE INTO plaid_items "
+            "(item_id, institution_id, institution_name, sync_cursor, last_synced, error) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (item_id, institution_id, institution_name, sync_cursor,
+             datetime.now().isoformat(), error),
+        )
+        self.conn.commit()
+
+    def get_plaid_items(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM plaid_items").fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_plaid_item(self, item_id: str):
+        # Delete transactions first (references account_ids), then accounts, then item
+        self.conn.execute(
+            "DELETE FROM transactions WHERE account_id IN "
+            "(SELECT account_id FROM plaid_accounts WHERE item_id = ?)", (item_id,),
+        )
+        self.conn.execute("DELETE FROM plaid_accounts WHERE item_id = ?", (item_id,))
+        self.conn.execute("DELETE FROM plaid_items WHERE item_id = ?", (item_id,))
+        self.conn.commit()
+
+    def update_plaid_sync_cursor(self, item_id: str, cursor: str):
+        self.conn.execute(
+            "UPDATE plaid_items SET sync_cursor = ?, last_synced = ? WHERE item_id = ?",
+            (cursor, datetime.now().isoformat(), item_id),
+        )
+        self.conn.commit()
+
+    # ── Plaid Accounts ────────────────────────────────────────────────
+    def upsert_plaid_accounts(self, accounts: list[dict]):
+        for acct in accounts:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO plaid_accounts "
+                "(account_id, item_id, institution_name, name, official_name, "
+                "account_type, subtype, mask, current_balance, available_balance, "
+                "credit_limit, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    acct["account_id"], acct.get("item_id", ""),
+                    acct.get("institution_name", ""), acct.get("name", ""),
+                    acct.get("official_name", ""), acct.get("account_type", ""),
+                    acct.get("subtype", ""), acct.get("mask", ""),
+                    acct.get("current_balance", 0), acct.get("available_balance"),
+                    acct.get("credit_limit"), datetime.now().isoformat(),
+                ),
+            )
+        self.conn.commit()
+
+    def get_plaid_accounts(self, item_id: str | None = None) -> list[dict]:
+        if item_id:
+            rows = self.conn.execute(
+                "SELECT * FROM plaid_accounts WHERE item_id = ?", (item_id,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM plaid_accounts").fetchall()
+        return [dict(r) for r in rows]
+
+    def update_account_balances(self, account_id: str, current_balance: float,
+                                available_balance: float | None = None,
+                                credit_limit: float | None = None):
+        self.conn.execute(
+            "UPDATE plaid_accounts SET current_balance = ?, available_balance = ?, "
+            "credit_limit = ?, last_synced = ? WHERE account_id = ?",
+            (current_balance, available_balance, credit_limit,
+             datetime.now().isoformat(), account_id),
+        )
+        self.conn.commit()
+
+    # ── Transactions (unified) ────────────────────────────────────────
+    def upsert_transactions(self, txns: list[dict]):
+        for txn in txns:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO transactions "
+                "(transaction_id, account_id, account_name, date, authorized_date, "
+                "amount, merchant_name, name, category, status, pending, "
+                "institution_name, source, iso_currency_code, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    txn["transaction_id"], txn.get("account_id", ""),
+                    txn.get("account_name", ""), txn.get("date", ""),
+                    txn.get("authorized_date", ""), txn.get("amount", 0),
+                    txn.get("merchant_name", ""), txn.get("name", ""),
+                    txn.get("category", ""), txn.get("status", "POSTED"),
+                    1 if txn.get("pending", False) else 0,
+                    txn.get("institution_name", ""), txn.get("source", "PLAID"),
+                    txn.get("iso_currency_code", "USD"),
+                    json.dumps(txn.get("metadata", {})),
+                ),
+            )
+        self.conn.commit()
+
+    def remove_transactions(self, transaction_ids: list[str]):
+        if not transaction_ids:
+            return
+        placeholders = ",".join("?" for _ in transaction_ids)
+        self.conn.execute(
+            f"DELETE FROM transactions WHERE transaction_id IN ({placeholders})",
+            transaction_ids,
+        )
+        self.conn.commit()
+
+    def get_transactions(
+        self, account_id: str | None = None, start: date | None = None,
+        end: date | None = None, status: str | None = None,
+        source: str | None = None, limit: int = 100, offset: int = 0,
+    ) -> list[dict]:
+        query = "SELECT * FROM transactions WHERE 1=1"
+        params: list = []
+        if account_id:
+            query += " AND account_id = ?"
+            params.append(account_id)
+        if start:
+            query += " AND date >= ?"
+            params.append(start.isoformat())
+        if end:
+            query += " AND date <= ?"
+            params.append(end.isoformat())
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        query += " ORDER BY date DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_transaction_count(self, source: str | None = None) -> int:
+        if source:
+            row = self.conn.execute(
+                "SELECT COUNT(*) as cnt FROM transactions WHERE source = ?", (source,)
+            ).fetchone()
+        else:
+            row = self.conn.execute("SELECT COUNT(*) as cnt FROM transactions").fetchone()
+        return row["cnt"] if row else 0
 
     # ── Maintenance ──────────────────────────────────────────────────
     def get_cache_size_mb(self) -> float:

@@ -221,3 +221,5 @@ class PanelID(Enum):
     DATA_QUALITY = "data_quality"
     SANKEY = "sankey"
     ORDERS = "orders"
+    TRANSACTIONS = "transactions"
+    ACCOUNT_BALANCES = "account_balances"

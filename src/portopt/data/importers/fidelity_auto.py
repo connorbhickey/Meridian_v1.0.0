@@ -14,6 +14,7 @@ from pathlib import Path
 from portopt.config import get_fidelity_state_dir
 from portopt.data.models import (
     AccountSummary, Asset, AssetType, Holding, Portfolio,
+    Transaction, TransactionSource, TransactionStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -314,6 +315,274 @@ class FidelityAutoImporter:
                 last_updated=datetime.now(),
             ))
         return accounts
+
+    def get_activity(self, days: int = 90) -> list[Transaction]:
+        """Scrape transaction/activity history from Fidelity.
+
+        Uses a tiered approach:
+        1. Intercept XHR/JSON API responses from the Activity page
+        2. Fall back to DOM scraping if no JSON endpoint found
+        3. Return empty list on failure (never crashes)
+
+        Must be logged in first.
+        """
+        if not self._fidelity or not self._logged_in:
+            raise RuntimeError("Not logged in to Fidelity")
+
+        try:
+            page = self._fidelity.page
+            captured_data = []
+
+            # Step 1: Set up network interception to capture JSON API responses
+            def _on_response(response):
+                try:
+                    url = response.url
+                    if response.status == 200 and (
+                        "activity" in url.lower()
+                        or "history" in url.lower()
+                        or "transaction" in url.lower()
+                        or "order" in url.lower()
+                    ):
+                        content_type = response.headers.get("content-type", "")
+                        if "json" in content_type or "javascript" in content_type:
+                            try:
+                                body = response.json()
+                                captured_data.append(("json", url, body))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            page.on("response", _on_response)
+
+            # Navigate to the Activity & Orders page
+            logger.info("Navigating to Fidelity Activity page...")
+            page.goto(
+                "https://digital.fidelity.com/ftgw/digital/portfolio/activity",
+                timeout=60000,
+            )
+            page.wait_for_load_state("networkidle", timeout=30000)
+
+            # Give extra time for async data loads
+            page.wait_for_timeout(3000)
+
+            # Remove the listener
+            page.remove_listener("response", _on_response)
+
+            # Step 2: Try to parse captured JSON data
+            transactions = self._parse_captured_activity(captured_data)
+            if transactions:
+                logger.info("Parsed %d Fidelity transactions from XHR data", len(transactions))
+                return transactions
+
+            # Step 3: Fall back to DOM scraping
+            logger.info("No JSON activity data captured, falling back to DOM scraping...")
+            transactions = self._scrape_activity_dom(page)
+            if transactions:
+                logger.info("Scraped %d Fidelity transactions from DOM", len(transactions))
+                return transactions
+
+            logger.warning("Could not extract Fidelity activity data (no JSON or DOM data found)")
+            return []
+
+        except Exception as e:
+            logger.warning("Failed to fetch Fidelity activity: %s", e)
+            return []
+
+    def _parse_captured_activity(self, captured_data: list) -> list[Transaction]:
+        """Parse transactions from intercepted JSON responses."""
+        transactions = []
+        for data_type, url, body in captured_data:
+            if data_type != "json" or not isinstance(body, (dict, list)):
+                continue
+
+            # Look for transaction-like arrays in the response
+            items = []
+            if isinstance(body, list):
+                items = body
+            elif isinstance(body, dict):
+                # Common patterns: body["activities"], body["orders"], body["transactions"]
+                for key in ("activities", "orders", "transactions", "activity",
+                            "data", "results", "items"):
+                    val = body.get(key)
+                    if isinstance(val, list) and val:
+                        items = val
+                        break
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                txn = self._map_fidelity_activity_item(item)
+                if txn:
+                    transactions.append(txn)
+
+        return transactions
+
+    def _scrape_activity_dom(self, page) -> list[Transaction]:
+        """Fall back: scrape the Activity page DOM for transaction rows."""
+        try:
+            # Try to find a table or list of activity items
+            rows_data = page.evaluate("""() => {
+                const results = [];
+                // Try common table/row selectors
+                const selectors = [
+                    'table tbody tr',
+                    '[data-testid*="activity"] tr',
+                    '.activity-row',
+                    '[class*="activity"] [class*="row"]',
+                    '[class*="transaction"] [class*="row"]',
+                ];
+                for (const sel of selectors) {
+                    const rows = document.querySelectorAll(sel);
+                    if (rows.length > 0) {
+                        rows.forEach((row, idx) => {
+                            const cells = row.querySelectorAll('td, [class*="cell"]');
+                            const cellTexts = Array.from(cells).map(c => c.textContent.trim());
+                            if (cellTexts.length >= 3) {
+                                results.push({
+                                    index: idx,
+                                    cells: cellTexts,
+                                    html: row.innerHTML.substring(0, 500),
+                                });
+                            }
+                        });
+                        break;
+                    }
+                }
+                return results;
+            }""")
+
+            transactions = []
+            for row in (rows_data or []):
+                cells = row.get("cells", [])
+                if len(cells) < 3:
+                    continue
+
+                txn = self._parse_dom_row(cells)
+                if txn:
+                    transactions.append(txn)
+
+            return transactions
+
+        except Exception as e:
+            logger.warning("DOM scraping failed: %s", e)
+            return []
+
+    def _map_fidelity_activity_item(self, item: dict) -> Transaction | None:
+        """Map a Fidelity JSON activity item to a Transaction."""
+        try:
+            # Try various field name patterns Fidelity might use
+            txn_id = (
+                item.get("activityId") or item.get("orderId")
+                or item.get("id") or item.get("transactionId")
+                or f"fid_{hash(json.dumps(item, default=str)) & 0xFFFFFFFF:08x}"
+            )
+            acct = item.get("accountNumber") or item.get("account") or item.get("accountId") or ""
+            acct_name = item.get("accountName") or item.get("accountNickname") or acct
+
+            # Date
+            date_str = item.get("date") or item.get("settleDate") or item.get("tradeDate") or ""
+            txn_date = None
+            if date_str:
+                for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        txn_date = datetime.strptime(str(date_str).split("T")[0], fmt.split("T")[0]).date()
+                        break
+                    except ValueError:
+                        continue
+
+            # Amount
+            amount_raw = item.get("amount") or item.get("netAmount") or item.get("total") or 0
+            amount = float(str(amount_raw).replace("$", "").replace(",", "").replace("+", "")) if amount_raw else 0
+
+            # Description / type
+            description = item.get("description") or item.get("activityDescription") or item.get("name") or ""
+            txn_type = item.get("type") or item.get("activityType") or item.get("transactionType") or ""
+
+            # Status
+            status_str = (item.get("status") or item.get("settlementStatus") or "").lower()
+            if "pending" in status_str or "open" in status_str:
+                status = TransactionStatus.PENDING
+                pending = True
+            else:
+                status = TransactionStatus.POSTED
+                pending = False
+
+            # Sign convention: buys/contributions are positive (debit), sells/dividends negative (credit)
+            txn_type_lower = txn_type.lower()
+            if any(kw in txn_type_lower for kw in ("sell", "dividend", "distribution", "interest", "credit")):
+                amount = -abs(amount) if amount > 0 else amount
+            elif any(kw in txn_type_lower for kw in ("buy", "contribution", "fee", "debit")):
+                amount = abs(amount)
+
+            return Transaction(
+                transaction_id=str(txn_id),
+                account_id=str(acct),
+                account_name=str(acct_name),
+                date=txn_date,
+                authorized_date=txn_date,
+                amount=amount,
+                merchant_name="Fidelity",
+                name=str(description),
+                category=str(txn_type),
+                status=status,
+                pending=pending,
+                institution_name="Fidelity",
+                source=TransactionSource.FIDELITY,
+                iso_currency_code="USD",
+                metadata={"raw_type": str(txn_type)},
+            )
+        except Exception as e:
+            logger.debug("Failed to map Fidelity activity item: %s", e)
+            return None
+
+    def _parse_dom_row(self, cells: list[str]) -> Transaction | None:
+        """Parse a DOM table row into a Transaction."""
+        try:
+            # Heuristic: first cell is usually date, last is amount
+            date_str = cells[0] if cells else ""
+            description = cells[1] if len(cells) > 1 else ""
+            amount_str = cells[-1] if cells else "0"
+
+            txn_date = None
+            for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%b %d, %Y"):
+                try:
+                    txn_date = datetime.strptime(date_str.strip(), fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+            # Parse amount
+            clean_amount = amount_str.replace("$", "").replace(",", "").replace("+", "").strip()
+            if clean_amount.startswith("(") and clean_amount.endswith(")"):
+                clean_amount = "-" + clean_amount[1:-1]
+            try:
+                amount = float(clean_amount)
+            except ValueError:
+                amount = 0.0
+
+            txn_id = f"fid_dom_{hash(f'{date_str}{description}{amount_str}') & 0xFFFFFFFF:08x}"
+
+            return Transaction(
+                transaction_id=txn_id,
+                account_id="",
+                account_name="",
+                date=txn_date,
+                authorized_date=txn_date,
+                amount=amount,
+                merchant_name="Fidelity",
+                name=description.strip(),
+                category="",
+                status=TransactionStatus.POSTED,
+                pending=False,
+                institution_name="Fidelity",
+                source=TransactionSource.FIDELITY,
+                iso_currency_code="USD",
+                metadata={"raw_cells": cells},
+            )
+        except Exception as e:
+            logger.debug("Failed to parse DOM row: %s", e)
+            return None
 
     def save_session(self):
         """Explicitly save the current browser session state."""
