@@ -1,158 +1,206 @@
 # Meridian
 
-**Quantitative Portfolio Terminal** — professional-grade portfolio optimization, backtesting, and risk analysis.
+**Professional Portfolio Terminal** — quantitative optimization, walk-forward backtesting, and risk analytics in a single desktop app.
 
-Built with Python + PySide6. Runs on Windows, macOS, and Linux.
+Built with Python + PySide6. Dark "deep-space" theme with 30 dockable panels.
 
 ![CI](https://github.com/connorbhickey/Meridian_v1.0.0/actions/workflows/ci.yml/badge.svg)
 
-## Features
+---
 
-- **14 Optimization Methods** — Mean-Variance (max Sharpe, min vol, efficient frontier), HRP, HERC, Black-Litterman, TIC, Risk Budgeting, and more
-- **Walk-Forward Backtesting** — configurable rebalance frequency, transaction costs, and benchmark comparison
-- **Factor Analysis** — Fama-French 3-factor model with exposure decomposition
-- **Regime Detection** — HMM-based market regime identification with transition matrices
-- **Risk Budgeting** — Euler decomposition, Equal Risk Contribution, custom risk budgets
-- **Tax-Loss Harvesting** — candidate identification with replacement suggestions and savings estimates
-- **Strategy Comparison** — multi-method side-by-side analysis with parameter sweeps and bootstrap tests
-- **Execution Simulation** — market impact models (square-root, linear), capacity analysis
-- **Monte Carlo Simulation** — parametric GBM and block bootstrap with confidence bands
-- **AI Copilot** — Claude-powered assistant for portfolio analysis and report generation
-- **Multi-Brokerage Import** — Fidelity, Schwab, Robinhood CSV + OFX/QFX file support
-- **Real-Time Data** — Yahoo Finance (free), with Tiingo and Alpha Vantage as backups
-- **Macro Data** — FRED integration for rates, CPI, VIX, and more
-- **30 Dockable Panels** — Bloomberg-style tiling with save/restore layouts and presets
-- **Export** — CSV, JSON, Excel, and PNG chart export
+## Highlights
 
-## Quick Start
+| Category | Capabilities |
+|----------|-------------|
+| **Optimization** | Mean-Variance (max Sharpe, min vol, efficient frontier), HRP, HERC, Black-Litterman, TIC, Risk Budgeting, inverse variance — 14 methods total |
+| **Backtesting** | Walk-forward analysis, configurable rebalance frequency, 6 transaction cost models, benchmark comparison, out-of-sample validation |
+| **Risk** | Factor analysis (Fama-French 3-factor), HMM regime detection, Monte Carlo simulation (parametric GBM + block bootstrap), stress testing |
+| **Tax & Execution** | Tax-loss harvesting with replacement suggestions, multi-account asset location, market impact models, trade order generation |
+| **Data** | Yahoo Finance (free, no key), Tiingo, Alpha Vantage, FRED macro data — with SQLite caching and automatic retry on network failures |
+| **Import** | Fidelity, Schwab, Robinhood CSV + OFX/QFX files — auto-detected format |
+| **AI** | Claude-powered copilot chat, portfolio report generation, natural language analysis |
+| **Interface** | 30 dockable panels, Bloomberg-style tiling, save/restore layouts, CSV/JSON/Excel/PNG export |
+
+---
+
+## Installation
+
+### Windows Installer (Recommended)
+
+Download `Meridian-Setup.exe` from [Releases](https://github.com/connorbhickey/Meridian_v1.0.0/releases). Double-click to install — includes Start Menu shortcut, desktop icon, and Add/Remove Programs entry.
+
+### From Source
 
 ```bash
-# Install
+# Clone and install
+git clone https://github.com/connorbhickey/Meridian_v1.0.0.git
+cd Meridian_v1.0.0
 pip install -e ".[dev]"
 
 # Launch
 python -m portopt.app
 
-# Validate installation
+# Validate environment
 python -m portopt.app --check
-
-# Run tests
-python -m pytest tests/ -x -q
 ```
 
-## Sample Portfolios
+**Requirements:** Python 3.12+ on Windows, macOS, or Linux.
 
-Three sample portfolios are included to explore immediately:
+---
 
-- **Balanced 60/40** — VTI, VXUS, BND, BNDX, VNQ
-- **Tech Growth** — AAPL, MSFT, NVDA, GOOGL, AMZN, META, and more
-- **Dividend Income** — VYM, SCHD, JNJ, PG, KO, and more
+## Quick Start
 
-Load via **File > Load Sample** or the welcome wizard on first launch.
+1. **Launch** — run `python -m portopt.app` or the installed desktop shortcut
+2. **Load a sample** — File > Load Sample (Balanced 60/40, Tech Growth, or Dividend Income)
+3. **Optimize** — Ctrl+O to open optimization panel, select method, click Run
+4. **Backtest** — Ctrl+B to configure and run walk-forward backtest
+5. **Explore** — dock and arrange any of the 30 panels to build your workspace
+
+### Sample Portfolios
+
+| Portfolio | Assets | Description |
+|-----------|--------|-------------|
+| Balanced 60/40 | VTI, VXUS, BND, BNDX, VNQ | Classic diversified allocation |
+| Tech Growth | AAPL, MSFT, NVDA, GOOGL, AMZN, META, ... | Large-cap technology focus |
+| Dividend Income | VYM, SCHD, JNJ, PG, KO, ... | High-yield dividend strategy |
+
+---
 
 ## API Keys
 
-Enter via **AI > API Key** in the app. Keys are stored in OS credential manager (encrypted).
+Enter via **AI > API Key** in the menu bar. Stored securely in OS credential manager (Windows Credential Manager / macOS Keychain).
 
-| Key | Used By | Required? |
+| Key | Purpose | Required? |
 |-----|---------|-----------|
-| Anthropic | AI Copilot chat + report generation | For AI features |
-| FRED | Macro data (rates, CPI, VIX) | Optional |
-| Tiingo | Backup price provider | Optional |
-| Alpha Vantage | Backup price provider | Optional |
+| **Anthropic** | AI Copilot chat + report generation | For AI features |
+| **FRED** | Macro data (interest rates, CPI, VIX) | Optional |
+| **Tiingo** | Backup price provider | Optional |
+| **Alpha Vantage** | Backup price provider | Optional |
 
-Yahoo Finance works without any API key for basic price data.
+Yahoo Finance provides free price data with no API key. Tiingo and Alpha Vantage serve as fallback providers with automatic retry on network failures.
+
+---
 
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+I` | Import portfolio |
+| `Ctrl+I` | Import portfolio (CSV/OFX) |
 | `Ctrl+O` | Run optimization |
 | `Ctrl+B` | Run backtest |
-| `Ctrl+L` | Strategy Lab |
-| `Ctrl+F` | Fidelity connection |
+| `Ctrl+L` | Open Strategy Lab |
 | `F5` | Refresh positions |
-| `Ctrl+Shift+E` | Export |
+| `Ctrl+Shift+E` | Export data |
 | `Ctrl+R` | Generate AI report |
-| `Ctrl+Shift+A` | Open Copilot |
-| `F1` | Keyboard shortcuts |
+| `Ctrl+Shift+A` | Open AI Copilot |
+| `Ctrl+F` | Fidelity auto-import |
+| `F1` | Show all shortcuts |
 | `Ctrl+Q` | Exit |
+
+---
 
 ## Architecture
 
 ```
 src/portopt/
-  app.py                     # Entry point
-  constants.py               # Enums, colors, fonts
-  config.py                  # QSettings (INI format) configuration
-  engine/                    # Pure computation — zero GUI knowledge
-    optimization/            # MVO, HRP, HERC, Black-Litterman, TIC
-    risk.py                  # Covariance estimation, nearest PD
-    returns.py               # Return estimation (historical, CAPM, EW)
-    metrics.py               # 24 portfolio metrics
-    factors.py               # Fama-French 3-factor
-    regime.py                # HMM regime detection
-    risk_budgeting.py        # Risk budget optimization + Euler decomposition
-    tax_harvest.py           # Tax-loss harvesting
-    strategy_compare.py      # Multi-method comparison + bootstrap
-    execution.py             # Market impact models + execution simulation
-    account_optimizer.py     # Multi-account tax-aware asset location
-    order_manager.py         # Trade order generation
-    network/mst.py           # Minimum Spanning Tree
-  data/                      # Data providers, importers, caching
-    models.py                # Asset, Holding, Portfolio, OptimizationResult
-    cache.py                 # SQLite price cache
-    manager.py               # DataManager (coordinates providers)
+  app.py                     # Entry point — QApplication + MainWindow
+  constants.py               # Enums (OptMethod, CovEstimator, ...), Colors, Fonts
+  config.py                  # QSettings (INI format)
+  engine/                    # Pure computation — zero GUI imports
+    optimization/            # MVO, HRP, HERC, Black-Litterman, TIC, Risk Budget
+    risk.py                  # Covariance estimation (sample, Ledoit-Wolf, denoised, EW)
+    returns.py               # Return estimation (historical, CAPM, exponential)
+    metrics.py               # 24 portfolio metrics (Sharpe, Sortino, CVaR, max DD, ...)
+    factors.py               # Fama-French 3-factor regression
+    regime.py                # HMM regime detection + transition matrices
+    risk_budgeting.py        # Risk budget optimization + Euler decomposition + ERC
+    tax_harvest.py           # Tax-loss harvesting candidates
+    strategy_compare.py      # Multi-method comparison + parameter sweeps
+    execution.py             # Market impact models (sqrt/linear) + capacity analysis
+    network/mst.py           # Minimum Spanning Tree network graph
+  data/
     providers/               # YFinance, Tiingo, AlphaVantage, FRED, Fundamentals
-    importers/               # Fidelity, Schwab, Robinhood, OFX, Generic CSV
-    quality.py               # Data quality analysis
-  backtest/                  # Backtesting engine + walk-forward analysis
-  gui/                       # PySide6 panels (30), controllers (5), dialogs (12)
-  samples/                   # Bundled sample portfolios
-  utils/                     # Threading, credentials, helpers
+    importers/               # Fidelity, Schwab, Robinhood CSV, OFX/QFX, Generic
+    cache.py                 # SQLite price/asset cache with WAL mode
+    manager.py               # DataManager — coordinates providers with retry + fallback
+    quality.py               # Data quality (coverage, staleness, anomalies)
+  backtest/                  # Engine, runner, walk-forward, costs, rebalancer
+  gui/
+    panels/                  # 30 panels (portfolio, frontier, correlation, ...)
+    controllers/             # 5 controllers (optimization, backtest, data, ...)
+    dialogs/                 # 12 dialogs (API keys, preferences, export, ...)
+    theme.py                 # Dark "deep-space" stylesheet
+    dock_manager.py          # Save/restore panel layouts
+  utils/
+    threading.py             # QThreadPool worker wrappers
+    credentials.py           # OS keyring integration
+    retry.py                 # Exponential backoff for network failures
 ```
 
-- **Engine layer** has zero GUI imports — testable independently
-- **Controllers** emit Qt signals; MainWindow wires them to panel updates
-- **All long operations** run on QThreadPool (never blocks the UI)
+**Design principles:**
+- Engine layer has zero GUI imports — testable independently
+- Controllers emit Qt signals; MainWindow wires them to panels
+- All long operations run on QThreadPool (never blocks UI)
+- Data providers use automatic retry with exponential backoff
 
-## Tech Stack
-
-- Python 3.12+, PySide6, pyqtgraph, numpy, pandas, scipy, scikit-learn, cvxpy
-- SQLite for price caching
-- Keyring for secure credential storage
-- hmmlearn for regime detection
-- anthropic SDK for AI Copilot
-- jinja2 for report templating
+---
 
 ## Testing
 
 ```bash
-python -m pytest tests/ -x -q          # All 842+ tests
-python -m pytest tests/engine/ -x -q   # Engine only
-python -m pytest tests/data/ -x -q     # Data layer
-python -m pytest tests/backtest/ -x -q # Backtesting
-python -m pytest tests/gui/ -x -q      # GUI (requires pytest-qt)
+python -m pytest tests/ -x -q          # All 1012 tests
+python -m pytest tests/engine/ -x -q   # Engine (optimization, metrics, risk)
+python -m pytest tests/data/ -x -q     # Data layer (providers, cache, importers)
+python -m pytest tests/backtest/ -x -q # Backtesting engine
+python -m pytest tests/gui/ -x -q      # GUI integration + stress tests
 ```
+
+**Coverage:** 1012 tests across engine, data, backtest, and GUI layers — including integration tests for full controller signal chains and stress tests with 500+ holdings.
+
+---
 
 ## CI/CD
 
-- **CI**: lint (ruff) → test (4 matrix: Ubuntu/Windows x Python 3.12/3.13) → build (PyInstaller)
-- **Release**: Push a `v*` tag to trigger Windows build + GitHub Release with changelog
-- Actions pinned to SHA for supply-chain security
+- **CI**: Lint (ruff) → Test (4-matrix: Ubuntu/Windows x Python 3.12/3.13) → Build (PyInstaller)
+- **Release**: Push `v*` tag → PyInstaller build → NSIS installer → GitHub Release with changelog
+- All GitHub Actions pinned to SHA for supply-chain security
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0   # Trigger release
+# Trigger a release
+git tag -a v1.0.3 -m "v1.0.3" && git push origin v1.0.3
 ```
 
-## Building
+---
+
+## Building from Source
 
 ```bash
+# Install build dependencies
 pip install -e ".[build]"
-python scripts/build.py                # Produces dist/Meridian/Meridian.exe
-pyinstaller meridian.spec --noconfirm  # Direct PyInstaller build
+
+# Build standalone executable
+pyinstaller meridian.spec --noconfirm   # -> dist/Meridian/Meridian.exe
+
+# Build Windows installer (requires NSIS)
+makensis scripts/installer/meridian.nsi  # -> dist/Meridian-Setup.exe
 ```
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+|-------|-------------|
+| **UI** | PySide6, pyqtgraph |
+| **Computation** | numpy, pandas, scipy, scikit-learn, cvxpy |
+| **Data** | yfinance, requests, SQLite |
+| **AI** | anthropic SDK, jinja2 |
+| **Regime Detection** | hmmlearn |
+| **Network Analysis** | networkx |
+| **Security** | keyring (OS credential manager) |
+| **Build** | PyInstaller, NSIS |
+
+---
 
 ## License
 
