@@ -14,6 +14,7 @@ from portopt.data.importers.fidelity_auto import (
 )
 from portopt.data.models import (
     AccountSummary, Asset, AssetType, Holding, Portfolio,
+    Transaction, TransactionSource, TransactionStatus,
 )
 from portopt.utils.credentials import (
     FIDELITY_USERNAME, FIDELITY_PASSWORD, FIDELITY_TOTP_SECRET,
@@ -35,6 +36,8 @@ class FidelityController(QObject):
     needs_2fa = Signal()             # Emitted when 2FA code is required
     status_changed = Signal(str)     # Status text updates
     playwright_missing = Signal()    # Emitted when Playwright Firefox is not installed
+    transactions_synced = Signal(int)   # Count of transactions fetched
+    transactions_loaded = Signal(list)  # list[Transaction] for display
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -191,6 +194,52 @@ class FidelityController(QObject):
 
         self.connected.emit(portfolio)
 
+        # Auto-trigger transaction sync after positions load
+        self.sync_transactions()
+
+    # ── Transaction sync ──────────────────────────────────────────────
+
+    def sync_transactions(self, days: int = 90):
+        """Scrape Fidelity activity/transactions (runs in background)."""
+        if not self._importer.is_connected:
+            return
+        self.status_changed.emit("Fetching Fidelity transactions...")
+        self._worker = run_in_thread(
+            self._do_sync_transactions, days,
+            on_result=self._on_transactions_synced,
+            on_error=self._on_connect_error,
+        )
+
+    def _do_sync_transactions(self, days: int) -> int:
+        """Background: scrape activity and store in cache."""
+        txns = self._importer.get_activity(days)
+        if txns:
+            self._cache.upsert_transactions([
+                self._transaction_to_dict(t) for t in txns
+            ])
+        return len(txns)
+
+    def _on_transactions_synced(self, count: int):
+        if count > 0:
+            self.status_changed.emit(f"Fetched {count} Fidelity transactions")
+        self.transactions_synced.emit(count)
+
+    def load_transactions(self, account_id: str | None = None,
+                          start=None, end=None, status: str | None = None,
+                          limit: int = 500, offset: int = 0):
+        """Load Fidelity transactions from cache for display."""
+        self._worker = run_in_thread(
+            self._cache.get_transactions,
+            account_id=account_id, start=start, end=end,
+            status=status, source="FIDELITY", limit=limit, offset=offset,
+            on_result=self._on_transactions_loaded,
+            on_error=self._on_connect_error,
+        )
+
+    def _on_transactions_loaded(self, rows: list[dict]):
+        txns = [self._dict_to_transaction(r) for r in rows]
+        self.transactions_loaded.emit(txns)
+
     def _save_portfolio_snapshot(self, portfolio: Portfolio):
         """Serialize portfolio to CacheDB for offline startup."""
         try:
@@ -313,3 +362,84 @@ class FidelityController(QObject):
             self._importer.close()
         except Exception:
             pass
+
+    # ── Serialization helpers ─────────────────────────────────────────
+
+    @staticmethod
+    def _transaction_to_dict(txn: Transaction) -> dict:
+        """Convert Transaction dataclass to dict for cache storage."""
+        return {
+            "transaction_id": txn.transaction_id,
+            "account_id": txn.account_id,
+            "account_name": txn.account_name,
+            "date": txn.date.isoformat() if txn.date else "",
+            "authorized_date": txn.authorized_date.isoformat() if txn.authorized_date else "",
+            "amount": txn.amount,
+            "merchant_name": txn.merchant_name,
+            "name": txn.name,
+            "category": txn.category,
+            "status": txn.status.name,
+            "pending": txn.pending,
+            "institution_name": txn.institution_name,
+            "source": txn.source.name,
+            "iso_currency_code": txn.iso_currency_code,
+            "metadata": txn.metadata,
+        }
+
+    @staticmethod
+    def _dict_to_transaction(row: dict) -> Transaction:
+        """Convert a cache dict row to a Transaction dataclass."""
+        from datetime import datetime as dt
+
+        txn_date = None
+        if row.get("date"):
+            try:
+                txn_date = dt.fromisoformat(row["date"]).date()
+            except (ValueError, TypeError):
+                pass
+
+        auth_date = None
+        if row.get("authorized_date"):
+            try:
+                auth_date = dt.fromisoformat(row["authorized_date"]).date()
+            except (ValueError, TypeError):
+                pass
+
+        status = TransactionStatus.POSTED
+        status_str = row.get("status", "POSTED")
+        try:
+            status = TransactionStatus[status_str]
+        except (KeyError, TypeError):
+            pass
+
+        source = TransactionSource.FIDELITY
+        source_str = row.get("source", "FIDELITY")
+        try:
+            source = TransactionSource[source_str]
+        except (KeyError, TypeError):
+            pass
+
+        metadata = row.get("metadata", {})
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+
+        return Transaction(
+            transaction_id=row.get("transaction_id", ""),
+            account_id=row.get("account_id", ""),
+            account_name=row.get("account_name", ""),
+            date=txn_date,
+            authorized_date=auth_date,
+            amount=float(row.get("amount", 0)),
+            merchant_name=row.get("merchant_name", ""),
+            name=row.get("name", ""),
+            category=row.get("category", ""),
+            status=status,
+            pending=bool(row.get("pending", False)),
+            institution_name=row.get("institution_name", ""),
+            source=source,
+            iso_currency_code=row.get("iso_currency_code", "USD"),
+            metadata=metadata,
+        )
