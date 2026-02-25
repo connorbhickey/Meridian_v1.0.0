@@ -40,7 +40,13 @@ class DataController(QObject):
 
     def _on_prices(self, result):
         loaded = sum(1 for df in result.values() if not df.empty)
-        self.status_changed.emit(f"Loaded prices for {loaded}/{len(result)} symbols")
+        failed = [s for s, df in result.items() if df.empty]
+        if failed:
+            self.status_changed.emit(
+                f"Loaded {loaded}/{len(result)} symbols (failed: {', '.join(failed[:5])})"
+            )
+        else:
+            self.status_changed.emit(f"Loaded prices for {loaded} symbols")
         self.prices_loaded.emit(result)
 
     def fetch_returns(self, symbols: list[str], start: date, end: date | None = None):

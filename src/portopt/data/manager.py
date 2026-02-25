@@ -16,6 +16,7 @@ from portopt.data.providers.alphavantage_provider import AlphaVantageProvider
 from portopt.data.providers.tiingo_provider import TiingoProvider
 from portopt.data.providers.fred_provider import FredProvider
 from portopt.data.providers.fundamental_provider import FundamentalProvider
+from portopt.utils.retry import is_transient, retry_on_transient
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class DataManager:
         # Batch fetch missing symbols
         if to_fetch:
             fetched = self._primary.get_multiple_prices(to_fetch, start, end)
+            failed_syms = []
             for sym, df in fetched.items():
                 if not df.empty:
                     self.cache.store_prices(sym, df)
@@ -103,6 +105,15 @@ class DataManager:
                         results[sym] = combined
                     else:
                         results[sym] = df
+                else:
+                    failed_syms.append(sym)
+
+            # Retry failed symbols individually with fallback chain
+            for sym in failed_syms:
+                df = self._fetch_with_fallback(sym, start, end)
+                if not df.empty:
+                    self.cache.store_prices(sym, df)
+                    results[sym] = df
                 elif sym not in results:
                     results[sym] = pd.DataFrame()
 
@@ -172,21 +183,37 @@ class DataManager:
     def _fetch_with_fallback(
         self, symbol: str, start: date, end: date
     ) -> pd.DataFrame:
-        """Try primary provider, fall back if it fails."""
+        """Try primary provider with retry, fall back if it fails."""
+        # Try primary with retry for transient errors
         try:
-            df = self._primary.get_prices(symbol, start, end)
+            df = self._fetch_primary_with_retry(symbol, start, end)
             if not df.empty:
                 return df
         except Exception as e:
             logger.warning("Primary provider failed for %s: %s", symbol, e)
 
+        # Try fallback with retry
         if self._fallback:
             try:
-                return self._fallback.get_prices(symbol, start, end)
+                df = self._fetch_fallback_with_retry(symbol, start, end)
+                if not df.empty:
+                    return df
             except Exception as e:
                 logger.warning("Fallback provider also failed for %s: %s", symbol, e)
 
         return pd.DataFrame()
+
+    @retry_on_transient(max_retries=2, base_delay=1.0)
+    def _fetch_primary_with_retry(
+        self, symbol: str, start: date, end: date
+    ) -> pd.DataFrame:
+        return self._primary.get_prices(symbol, start, end)
+
+    @retry_on_transient(max_retries=1, base_delay=1.5)
+    def _fetch_fallback_with_retry(
+        self, symbol: str, start: date, end: date
+    ) -> pd.DataFrame:
+        return self._fallback.get_prices(symbol, start, end)  # type: ignore[union-attr]
 
     def get_fred_series(
         self, series_id: str, start: date, end: date | None = None
@@ -207,15 +234,23 @@ class DataManager:
 
     def _fetch_with_fallback_price(self, symbol: str) -> float:
         try:
-            return self._primary.get_current_price(symbol)
+            return self._fetch_primary_price_with_retry(symbol)
         except Exception:
             pass
         if self._fallback:
             try:
-                return self._fallback.get_current_price(symbol)
+                return self._fetch_fallback_price_with_retry(symbol)
             except Exception:
                 pass
         return 0.0
+
+    @retry_on_transient(max_retries=2, base_delay=0.5)
+    def _fetch_primary_price_with_retry(self, symbol: str) -> float:
+        return self._primary.get_current_price(symbol)
+
+    @retry_on_transient(max_retries=1, base_delay=1.0)
+    def _fetch_fallback_price_with_retry(self, symbol: str) -> float:
+        return self._fallback.get_current_price(symbol)  # type: ignore[union-attr]
 
     def close(self):
         self.cache.close()
