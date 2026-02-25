@@ -2,6 +2,7 @@
 
 Assembles the ~50-field data dict required by run_prediction() using:
   - YFinance: price history, fundamentals, technicals, analyst targets
+  - YFinance: financials (income statement, cash flow, balance sheet)
   - FRED: fed funds rate, VIX, yield curve, credit spread
   - Computed: RSI-14, SMA-50/200, annualized vol, performance metrics
 
@@ -152,6 +153,24 @@ def fetch_prediction_data(
     is_etf = quote_type == "ETF"
     expense_ratio = (_safe(info.get("annualReportExpenseRatio")) or 0.0) * 100
 
+    # ── Financial statements (for enriched fields) ──
+    capex_to_rev = 8.0
+    interest_coverage = 10.0
+    prior_rev_growth = 8.0
+    share_count_change = 0.0
+    hist_earnings_move = 6.0
+
+    if not is_etf:
+        capex_to_rev = _fetch_capex_to_revenue(ticker, capex_to_rev)
+        interest_coverage = _fetch_interest_coverage(ticker, interest_coverage)
+        prior_rev_growth = _fetch_prior_revenue_growth(ticker, prior_rev_growth)
+        share_count_change = _fetch_share_count_change(ticker, share_count_change)
+
+    # Historical earnings move average from earnings dates + price history
+    hist_earnings_move = _fetch_historical_earnings_move(
+        ticker, hist, hist_earnings_move,
+    )
+
     # ── FRED macro data ──
     fed_funds = 4.5
     vix_val = 18.0
@@ -227,7 +246,7 @@ def fetch_prediction_data(
         "nextEarningsDate": next_earnings,
         "lastEarningsSurprise": last_surprise,
         "daysSinceEarnings": days_since,
-        "historicalEarningsMoveAvg": 6.0,  # default
+        "historicalEarningsMoveAvg": hist_earnings_move,
 
         # Macro (FRED or defaults)
         "fedFundsRate": fed_funds,
@@ -245,14 +264,14 @@ def fetch_prediction_data(
         "putCallRatio": 0.7,
         "institutionalOwnership": (_safe(info.get("heldPercentInstitutions")) or 0.65) * 100,
         "earningsRevision3m": 0.0,
-        "capexToRevenue": 8.0,
+        "capexToRevenue": capex_to_rev,
         "ivRank": 50.0,
         "ivSkew": 0.0,
         "insiderNetBuying": 0.0,
         "revenueGrowthPct": (_safe(info.get("revenueGrowth")) or 0.08) * 100,
-        "priorRevenueGrowthPct": 8.0,
-        "interestCoverage": 10.0,
-        "shareCountChange": 0.0,
+        "priorRevenueGrowthPct": prior_rev_growth,
+        "interestCoverage": interest_coverage,
+        "shareCountChange": share_count_change,
 
         # Metadata
         "isETF": is_etf,
@@ -262,8 +281,153 @@ def fetch_prediction_data(
 
 
 # ──────────────────────────────────────────────────────────────────
+# Financial statement enrichment helpers
+# ──────────────────────────────────────────────────────────────────
+
+def _fetch_capex_to_revenue(ticker, default: float) -> float:
+    """Compute CapEx/Revenue % from cash flow + income statements."""
+    try:
+        cf = ticker.cashflow
+        inc = ticker.income_stmt
+        if cf is None or cf.empty or inc is None or inc.empty:
+            return default
+
+        # Find CapEx row (yfinance uses various labels)
+        capex_row = _find_row(cf, ["Capital Expenditure", "Capital Expenditures"])
+        rev_row = _find_row(inc, ["Total Revenue", "Revenue"])
+        if capex_row is None or rev_row is None:
+            return default
+
+        capex = abs(float(capex_row.iloc[0]))
+        revenue = float(rev_row.iloc[0])
+        if revenue <= 0:
+            return default
+        return round(capex / revenue * 100, 1)
+    except Exception:
+        return default
+
+
+def _fetch_interest_coverage(ticker, default: float) -> float:
+    """Compute EBIT / Interest Expense from income statement."""
+    try:
+        inc = ticker.income_stmt
+        if inc is None or inc.empty:
+            return default
+
+        ebit_row = _find_row(inc, ["EBIT", "Operating Income"])
+        interest_row = _find_row(inc, ["Interest Expense"])
+        if ebit_row is None or interest_row is None:
+            return default
+
+        ebit = float(ebit_row.iloc[0])
+        interest = abs(float(interest_row.iloc[0]))
+        if interest <= 0:
+            return default
+        return round(ebit / interest, 1)
+    except Exception:
+        return default
+
+
+def _fetch_prior_revenue_growth(ticker, default: float) -> float:
+    """Compute prior-period revenue growth from income statement history."""
+    try:
+        inc = ticker.income_stmt
+        if inc is None or inc.empty:
+            return default
+
+        rev_row = _find_row(inc, ["Total Revenue", "Revenue"])
+        if rev_row is None or len(rev_row) < 3:
+            return default
+
+        # Columns are newest-first: [0]=latest, [1]=prior, [2]=two-ago
+        rev_prior = float(rev_row.iloc[1])
+        rev_two_ago = float(rev_row.iloc[2])
+        if rev_two_ago <= 0:
+            return default
+        return round((rev_prior / rev_two_ago - 1) * 100, 1)
+    except Exception:
+        return default
+
+
+def _fetch_share_count_change(ticker, default: float) -> float:
+    """Compute YoY change in diluted shares from income statement."""
+    try:
+        inc = ticker.income_stmt
+        if inc is None or inc.empty:
+            return default
+
+        shares_row = _find_row(inc, [
+            "Diluted Average Shares", "Basic Average Shares",
+            "Diluted Shares", "Basic Shares",
+        ])
+        if shares_row is None or len(shares_row) < 2:
+            return default
+
+        current = float(shares_row.iloc[0])
+        prior = float(shares_row.iloc[1])
+        if prior <= 0:
+            return default
+        return round((current / prior - 1) * 100, 1)
+    except Exception:
+        return default
+
+
+def _fetch_historical_earnings_move(ticker, hist, default: float) -> float:
+    """Average absolute price move around past earnings dates."""
+    try:
+        earnings_dates = ticker.earnings_dates
+        if earnings_dates is None or earnings_dates.empty:
+            return default
+        if hist is None or hist.empty or len(hist) < 5:
+            return default
+
+        close = hist["Close"]
+        now = pd.Timestamp.now(tz="UTC")
+        past_dates = earnings_dates[earnings_dates.index <= now].index
+
+        moves = []
+        for ed in past_dates[:4]:  # last 4 earnings
+            ed_date = ed.date() if hasattr(ed, "date") else ed
+            # Find the nearest trading day in our history
+            mask = close.index.date == ed_date
+            if not mask.any():
+                # Try the next trading day
+                for offset in range(1, 4):
+                    try:
+                        check = ed_date + timedelta(days=offset)
+                    except Exception:
+                        break
+                    mask = close.index.date == check
+                    if mask.any():
+                        break
+            if not mask.any():
+                continue
+
+            idx = close.index[mask][0]
+            loc = close.index.get_loc(idx)
+            if loc < 1:
+                continue
+            day_return = abs(float(close.iloc[loc]) / float(close.iloc[loc - 1]) - 1) * 100
+            moves.append(day_return)
+
+        if len(moves) >= 2:
+            return round(float(np.mean(moves)), 1)
+        return default
+    except Exception:
+        return default
+
+
+# ──────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────
+
+def _find_row(df: pd.DataFrame, labels: list[str]) -> pd.Series | None:
+    """Find the first matching row in a financial statement DataFrame."""
+    for label in labels:
+        if label in df.index:
+            return df.loc[label]
+    return None
+
 
 def _safe(val) -> float | None:
     """Convert to float, returning None for NaN / missing."""

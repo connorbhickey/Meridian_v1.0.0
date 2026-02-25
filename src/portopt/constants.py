@@ -5,7 +5,7 @@ from enum import Enum, auto
 
 # ── Application ──────────────────────────────────────────────────────
 APP_NAME = "Meridian"
-APP_VERSION = "1.0.2"
+APP_VERSION = "2.1.1"
 APP_ORG = "Meridian"
 MAX_ASSETS = 100
 

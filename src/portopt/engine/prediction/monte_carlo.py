@@ -16,12 +16,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from portopt.engine.prediction.prng import (
-    make_lcg,
-    normal_rv,
-    percentile,
-    student_t_rv,
-)
+from portopt.engine.prediction.prng import percentile
 
 
 @dataclass
@@ -58,7 +53,7 @@ def mjd_simulate(
     seed: int,
     params: MJDParams | None = None,
 ) -> np.ndarray:
-    """Run Merton Jump-Diffusion Monte Carlo simulation.
+    """Run Merton Jump-Diffusion Monte Carlo simulation (vectorized).
 
     Args:
         s0: Current price
@@ -66,7 +61,7 @@ def mjd_simulate(
         sig: Annual volatility
         trading_days: Horizon in trading days
         n_sims: Number of simulation paths
-        seed: LCG seed for reproducibility
+        seed: RNG seed for reproducibility
         params: MJD parameters (defaults if None)
 
     Returns:
@@ -76,28 +71,35 @@ def mjd_simulate(
         params = MJDParams()
 
     dt = 1.0 / 252.0
-    rng = make_lcg(seed)
+    rng = np.random.default_rng(seed)
 
     # Compensator: k = E[e^J - 1]
     k = math.exp(params.jump_mu + 0.5 * params.jump_sig ** 2) - 1.0
     drift = (mu - 0.5 * sig * sig - params.lambda_ * k) * dt
     diff = sig * math.sqrt(dt)
 
-    out = np.empty(n_sims, dtype=np.float64)
+    # Student-t(nu) innovations, normalized to unit variance
+    # numpy standard_t has variance = nu/(nu-2), so scale by sqrt((nu-2)/nu)
+    raw_t = rng.standard_t(params.nu, size=(n_sims, trading_days))
+    if params.nu > 2:
+        raw_t *= math.sqrt((params.nu - 2.0) / params.nu)
 
-    for i in range(n_sims):
-        log_s = 0.0
-        for t in range(trading_days):
-            log_s += drift + diff * student_t_rv(params.nu, rng)
-            # Poisson jump
-            if rng() < params.lambda_ * dt:
-                log_s += params.jump_mu + params.jump_sig * normal_rv(rng)
-            # Earnings event
-            if t == params.earnings_day and params.earnings_jump > 0:
-                log_s += normal_rv(rng) * params.earnings_jump
-        out[i] = s0 * math.exp(log_s)
+    # Daily log-returns: drift + diffusion
+    log_returns = drift + diff * raw_t
 
-    return out
+    # Poisson jumps (vectorized)
+    jump_mask = rng.random(size=(n_sims, trading_days)) < params.lambda_ * dt
+    jump_normals = rng.standard_normal(size=(n_sims, trading_days))
+    log_returns += jump_mask * (params.jump_mu + params.jump_sig * jump_normals)
+
+    # Earnings event shock on a specific day
+    if 0 <= params.earnings_day < trading_days and params.earnings_jump > 0:
+        log_returns[:, params.earnings_day] += (
+            rng.standard_normal(n_sims) * params.earnings_jump
+        )
+
+    # Terminal prices
+    return s0 * np.exp(np.sum(log_returns, axis=1))
 
 
 def mc_percentiles(terminal_prices: np.ndarray) -> MCResult:
