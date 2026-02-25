@@ -347,6 +347,9 @@ class MainWindow(QMainWindow):
         self.data_controller.error.connect(
             lambda msg: self.console_panel.log_error(f"Data error: {msg}")
         )
+        self.data_controller.current_price_loaded.connect(
+            self._on_watchlist_price_loaded
+        )
 
         # Optimization controller
         self.opt_controller = OptimizationController(self.data_controller, self)
@@ -1506,6 +1509,15 @@ class MainWindow(QMainWindow):
             })
         if items:
             self.watchlist_panel.set_watchlist(items[:30])  # top 30
+
+    def _on_watchlist_price_loaded(self, symbol: str, price: float):
+        """Update watchlist when a single ticker price arrives."""
+        items = self.watchlist_panel._watchlist
+        for item in items:
+            if item.get("symbol") == symbol:
+                item["price"] = price
+                break
+        self.watchlist_panel.set_watchlist(items)
 
     def _update_price_chart(self, prices: pd.DataFrame | None):
         """Feed price data to the price chart panel."""

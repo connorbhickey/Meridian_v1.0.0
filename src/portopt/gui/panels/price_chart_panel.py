@@ -83,10 +83,11 @@ class PriceChartPanel(BasePanel):
         layout.addLayout(toolbar)
 
         # --- Chart ---
-        self._plot_widget = pg.PlotWidget()
+        date_axis = pg.DateAxisItem(orientation="bottom")
+        self._plot_widget = pg.PlotWidget(axisItems={"bottom": date_axis})
         self._plot_widget.setBackground(Colors.BG_SECONDARY)
         self._plot_widget.showGrid(x=True, y=True, alpha=0.15)
-        self._plot_widget.setLabel("left", "Price", color=Colors.TEXT_SECONDARY)
+        self._plot_widget.setLabel("left", "Price ($)", color=Colors.TEXT_SECONDARY)
         self._plot_widget.setLabel("bottom", "Date", color=Colors.TEXT_SECONDARY)
 
         # Crosshair

@@ -90,8 +90,15 @@ class YFinanceProvider(BaseDataProvider):
 
         results = {}
         if len(symbols) == 1:
-            # yf.download returns flat columns for single ticker
-            results[symbols[0]] = data
+            # yf.download with group_by="ticker" returns MultiIndex columns
+            # for a single ticker: ('NVDA', 'Close') instead of flat 'Close'.
+            # Extract the sub-DataFrame to get flat columns.
+            sym = symbols[0]
+            try:
+                df = data[sym].dropna(how="all")
+                results[sym] = df
+            except (KeyError, AttributeError):
+                results[sym] = data
         else:
             for sym in symbols:
                 try:

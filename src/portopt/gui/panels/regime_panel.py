@@ -95,7 +95,11 @@ class RegimePanel(BasePanel):
         splitter = QSplitter(Qt.Vertical)
 
         # ── Regime timeline chart ────────────────────────────────────
-        self._regime_plot = pg.PlotWidget(title="Market Regime Timeline")
+        regime_date_axis = pg.DateAxisItem(orientation="bottom")
+        self._regime_plot = pg.PlotWidget(
+            title="Market Regime Timeline",
+            axisItems={"bottom": regime_date_axis},
+        )
         self._regime_plot.setBackground(Colors.BG_SECONDARY)
         self._regime_plot.showGrid(x=True, y=True, alpha=0.15)
         self._regime_plot.setLabel("left", "Return", color=Colors.TEXT_SECONDARY)

@@ -358,7 +358,8 @@ class StrategyLabPanel(BasePanel):
         )
         right_layout.addWidget(equity_label)
 
-        self._equity_plot = pg.PlotWidget()
+        equity_date_axis = pg.DateAxisItem(orientation="bottom")
+        self._equity_plot = pg.PlotWidget(axisItems={"bottom": equity_date_axis})
         self._equity_plot.setBackground(Colors.BG_SECONDARY)
         self._equity_plot.showGrid(x=True, y=True, alpha=0.15)
         self._equity_plot.setLabel("left", "Value ($)", color=Colors.TEXT_SECONDARY)
