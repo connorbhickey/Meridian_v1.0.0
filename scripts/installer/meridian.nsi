@@ -12,7 +12,9 @@
 ; Defines
 ;---------------------------------------------------------------------------
 !define PRODUCT_NAME "Meridian"
-!define PRODUCT_VERSION "1.0.2"
+!ifndef PRODUCT_VERSION
+  !define PRODUCT_VERSION "1.0.2"
+!endif
 !define PRODUCT_PUBLISHER "Meridian"
 !define PRODUCT_WEB_SITE "https://github.com/connorbhickey/Meridian_v1.0.0"
 !define PRODUCT_DIR_REGKEY "Software\${PRODUCT_NAME}"
@@ -65,7 +67,7 @@ SetCompressorDictSize 64
 ;---------------------------------------------------------------------------
 ; Version Info
 ;---------------------------------------------------------------------------
-VIProductVersion "1.0.2.0"
+VIProductVersion "${PRODUCT_VERSION}.0"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "${PRODUCT_NAME}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "${PRODUCT_PUBLISHER}"

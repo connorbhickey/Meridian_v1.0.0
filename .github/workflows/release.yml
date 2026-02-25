@@ -35,7 +35,8 @@ jobs:
 
       - name: Build installer
         run: |
-          & "C:\Program Files (x86)\NSIS\makensis.exe" /DPRODUCT_VERSION=${{ github.ref_name }} scripts\installer\meridian.nsi
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /DPRODUCT_VERSION=$ver scripts\installer\meridian.nsi
         shell: pwsh
 
       - name: Rename installer with version
