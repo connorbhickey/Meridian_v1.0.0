@@ -29,6 +29,20 @@ jobs:
       - name: Build executable
         run: pyinstaller meridian.spec --noconfirm
 
+      - name: Install NSIS
+        run: choco install nsis -y
+        shell: cmd
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /DPRODUCT_VERSION=${{ github.ref_name }} scripts\installer\meridian.nsi
+        shell: pwsh
+
+      - name: Rename installer with version
+        run: |
+          Move-Item -Path dist\Meridian-Setup.exe -Destination "Meridian-${{ github.ref_name }}-Setup.exe"
+        shell: pwsh
+
       - name: Create ZIP archive
         run: Compress-Archive -Path dist/Meridian/* -DestinationPath Meridian-${{ github.ref_name }}-windows.zip
         shell: pwsh
@@ -49,5 +63,7 @@ jobs:
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           body_path: changelog.txt
-          files: Meridian-${{ github.ref_name }}-windows.zip
+          files: |
+            Meridian-${{ github.ref_name }}-Setup.exe
+            Meridian-${{ github.ref_name }}-windows.zip
           generate_release_notes: true
