@@ -43,8 +43,11 @@ from portopt.gui.panels.tax_harvest_panel import TaxHarvestPanel
 from portopt.gui.panels.data_quality_panel import DataQualityPanel
 from portopt.gui.panels.sankey_panel import SankeyPanel
 from portopt.gui.panels.order_panel import OrderPanel
+from portopt.gui.panels.transaction_panel import TransactionPanel
+from portopt.gui.panels.balance_panel import BalancePanel
 from portopt.gui.panels.console_panel import ConsolePanel, ConsoleLogHandler
 from portopt.gui.controllers.fidelity_controller import FidelityController
+from portopt.gui.controllers.plaid_controller import PlaidController
 from portopt.gui.controllers.copilot_controller import CopilotController
 from portopt.gui.controllers.data_controller import DataController
 from portopt.gui.controllers.optimization_controller import OptimizationController
@@ -195,6 +198,12 @@ class MainWindow(QMainWindow):
             else:
                 self.console_panel.log_info("No saved Fidelity session. Use Data > Fidelity Connection or File > Load Sample.")
 
+        # Auto-sync Plaid if configured
+        if self.plaid_controller.is_configured:
+            self.console_panel.log_info("Plaid configured — syncing accounts and balances...")
+            self.plaid_controller.load_accounts()
+            self.plaid_controller.start_auto_sync()
+
     def _update_provider_status(self):
         """Update status bar with available data providers."""
         from portopt.utils.credentials import (
@@ -271,6 +280,8 @@ class MainWindow(QMainWindow):
         self.data_quality_panel = DataQualityPanel(self)
         self.sankey_panel = SankeyPanel(self)
         self.order_panel = OrderPanel(self)
+        self.transaction_panel = TransactionPanel(self)
+        self.balance_panel = BalancePanel(self)
 
         for panel in [
             self.portfolio_panel, self.watchlist_panel, self.price_chart_panel,
@@ -282,7 +293,8 @@ class MainWindow(QMainWindow):
             self.stress_test_panel, self.rolling_panel, self.copilot_panel,
             self.factor_panel, self.regime_panel, self.risk_budget_panel,
             self.tax_harvest_panel, self.data_quality_panel, self.sankey_panel,
-            self.order_panel, self.console_panel,
+            self.order_panel, self.transaction_panel, self.balance_panel,
+            self.console_panel,
         ]:
             self.panels[panel.panel_id] = panel
 
@@ -299,6 +311,33 @@ class MainWindow(QMainWindow):
             lambda msg: self.console_panel.log_info(f"Fidelity: {msg}")
         )
         self.fidelity_controller.playwright_missing.connect(self._on_playwright_missing)
+        self.fidelity_controller.transactions_synced.connect(
+            lambda n: self.console_panel.log_info(f"Fidelity: synced {n} transactions") if n > 0 else None
+        )
+        self.fidelity_controller.transactions_loaded.connect(self._on_fidelity_transactions_loaded)
+
+        # Plaid controller
+        self.plaid_controller = PlaidController(self)
+        self.plaid_controller.status_changed.connect(
+            lambda msg: self.console_panel.log_info(f"Plaid: {msg}")
+        )
+        self.plaid_controller.error.connect(
+            lambda msg: self.console_panel.log_error(f"Plaid error: {msg}")
+        )
+        self.plaid_controller.account_linked.connect(self._on_plaid_account_linked)
+        self.plaid_controller.accounts_updated.connect(self.balance_panel.set_plaid_accounts)
+        self.plaid_controller.balances_updated.connect(self.balance_panel.set_plaid_accounts)
+        self.plaid_controller.transactions_synced.connect(
+            lambda n: self.console_panel.log_info(f"Plaid: synced {n} transactions") if n > 0 else None
+        )
+        self.plaid_controller.transactions_loaded.connect(self._on_plaid_transactions_loaded)
+
+        # Balance panel signals
+        self.balance_panel.refresh_requested.connect(self._refresh_all_balances)
+        self.balance_panel.link_account_requested.connect(self._show_plaid_link)
+
+        # Transaction panel signals
+        self.transaction_panel.sync_requested.connect(self._sync_all_transactions)
 
         # Data controller
         self.data_controller = DataController(self)
@@ -1226,6 +1265,16 @@ class MainWindow(QMainWindow):
         if items:
             self.ticker_bar.set_items(items)
         self._populate_watchlist_from_portfolio()
+        # Update balance panel with Fidelity account data
+        if hasattr(portfolio, 'accounts') and portfolio.accounts:
+            self.balance_panel.set_fidelity_accounts([
+                {
+                    "account_id": a.account_id,
+                    "account_name": a.account_name,
+                    "total_value": a.total_value,
+                }
+                for a in portfolio.accounts
+            ])
         # Start price streaming for the new portfolio
         self._start_price_stream()
 
@@ -1258,6 +1307,71 @@ class MainWindow(QMainWindow):
             action.setChecked(intervals[i] == minutes)
         label = f"{minutes} min" if minutes > 0 else "off"
         self.console_panel.log_info(f"Fidelity auto-refresh: {label}")
+
+    # ── Plaid / Transactions ─────────────────────────────────────────
+
+    def _show_plaid_link(self):
+        """Show the Plaid Link dialog to connect a new financial institution."""
+        from portopt.utils.credentials import PLAID_CLIENT_ID, PLAID_SECRET, has_credential
+        if not has_credential(PLAID_CLIENT_ID) or not has_credential(PLAID_SECRET):
+            QMessageBox.warning(
+                self, "Plaid Not Configured",
+                "Plaid API keys are required to link bank accounts.\n\n"
+                "Go to AI > API Key to enter your Plaid Client ID and Secret.",
+            )
+            return
+
+        self.plaid_controller.configure()
+        self.plaid_controller.link_token_ready.connect(self._open_plaid_link_dialog)
+        self.plaid_controller.request_link_token()
+
+    def _open_plaid_link_dialog(self, link_token: str):
+        """Open the Plaid Link dialog with the provided link token."""
+        try:
+            self.plaid_controller.link_token_ready.disconnect(self._open_plaid_link_dialog)
+        except RuntimeError:
+            pass
+
+        from portopt.gui.dialogs.plaid_link_dialog import PlaidLinkDialog
+        dialog = PlaidLinkDialog(link_token, parent=self)
+        dialog.public_token_received.connect(self._on_plaid_link_complete)
+        dialog.exec()
+
+    def _on_plaid_link_complete(self, public_token: str, institution_name: str):
+        """Handle successful Plaid Link."""
+        self.console_panel.log_info(f"Linking {institution_name}...")
+        self.plaid_controller.complete_link(public_token, institution_name)
+
+    def _on_plaid_account_linked(self, institution_name: str):
+        """Handle new Plaid institution linked."""
+        self.console_panel.log_success(f"Linked: {institution_name}")
+        self.plaid_controller.load_accounts()
+        self.plaid_controller.sync_all_transactions()
+
+    def _on_plaid_transactions_loaded(self, transactions: list):
+        """Merge Plaid transactions into the transaction panel."""
+        self.transaction_panel.add_transactions(transactions)
+
+    def _on_fidelity_transactions_loaded(self, transactions: list):
+        """Merge Fidelity transactions into the transaction panel."""
+        self.transaction_panel.add_transactions(transactions)
+
+    def _sync_all_transactions(self):
+        """Sync transactions from all connected sources."""
+        self.console_panel.log_info("Syncing all transactions...")
+        self.transaction_panel.clear_transactions()
+        if self.plaid_controller.is_configured:
+            self.plaid_controller.sync_all_transactions()
+        if self.fidelity_controller.is_connected:
+            self.fidelity_controller.sync_transactions()
+
+    def _refresh_all_balances(self):
+        """Refresh balances from all connected sources."""
+        self.console_panel.log_info("Refreshing all balances...")
+        if self.plaid_controller.is_configured:
+            self.plaid_controller.refresh_balances()
+        if self.fidelity_controller.is_connected:
+            self.fidelity_controller.refresh_positions()
 
     # ── File Import ──────────────────────────────────────────────────
     def _import_csv(self):
@@ -1692,6 +1806,10 @@ class MainWindow(QMainWindow):
         data_menu.addAction(self._action("&Fidelity Connection...", "Ctrl+F", self._show_fidelity_login))
         data_menu.addAction(self._action("&Refresh Positions", "F5", self._refresh_fidelity))
         data_menu.addSeparator()
+        data_menu.addAction(self._action("&Link Financial Account...", "Ctrl+Shift+L", self._show_plaid_link))
+        data_menu.addAction(self._action("Sync All &Transactions", "Ctrl+Shift+T", self._sync_all_transactions))
+        data_menu.addAction(self._action("Refresh All &Balances", callback=self._refresh_all_balances))
+        data_menu.addSeparator()
         data_menu.addAction(self._action("Start Price &Stream", callback=self._start_price_stream))
         data_menu.addAction(self._action("Stop Price Strea&m", callback=self._stop_price_stream))
         data_menu.addSeparator()
@@ -1855,5 +1973,6 @@ class MainWindow(QMainWindow):
         self._settings.setValue("window/state", self.saveState())
         self.dock_manager.save_session()
         self.fidelity_controller.close()
+        self.plaid_controller.close()
         self.data_controller.close()
         super().closeEvent(event)

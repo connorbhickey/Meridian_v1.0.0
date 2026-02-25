@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 from portopt.constants import Colors, Fonts
 from portopt.utils.credentials import (
     ANTHROPIC_API_KEY, FRED_API_KEY, TIINGO_API_KEY, ALPHA_VANTAGE_API_KEY,
+    PLAID_CLIENT_ID, PLAID_SECRET,
     get_credential, store_credential, delete_credential,
 )
 
@@ -19,6 +20,8 @@ _KEY_DEFS = [
     (FRED_API_KEY, "FRED", "abcdef1234...", "Macro data (fred.stlouisfed.org)"),
     (TIINGO_API_KEY, "Tiingo", "abcdef1234...", "Backup price data (tiingo.com)"),
     (ALPHA_VANTAGE_API_KEY, "Alpha Vantage", "ABCDEF1234...", "Backup price data (alphavantage.co)"),
+    (PLAID_CLIENT_ID, "Plaid Client ID", "abcdef1234...", "Bank accounts (dashboard.plaid.com)"),
+    (PLAID_SECRET, "Plaid Secret", "abcdef1234...", "Bank accounts (dashboard.plaid.com)"),
 ]
 
 
@@ -44,7 +47,8 @@ class ApiKeyDialog(QDialog):
 
         desc = QLabel(
             "Keys are stored securely in Windows Credential Manager.\n"
-            "Only Anthropic is required (for AI Copilot). Others are optional."
+            "Anthropic is required for AI Copilot. Plaid is required for bank account linking.\n"
+            "Other keys are optional."
         )
         desc.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: 10px;")
         desc.setWordWrap(True)

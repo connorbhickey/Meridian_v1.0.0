@@ -166,10 +166,10 @@ class PlaidClient:
 
         has_more = True
         while has_more:
-            request = TransactionsSyncRequest(
-                access_token=access_token,
-                cursor=cursor if cursor else None,
-            )
+            kwargs = {"access_token": access_token}
+            if cursor:
+                kwargs["cursor"] = cursor
+            request = TransactionsSyncRequest(**kwargs)
             response = self._client.transactions_sync(request)
 
             for txn in response["added"]:
