@@ -99,8 +99,12 @@ class PreferencesDialog(QDialog):
         form = QFormLayout()
 
         self._theme_combo = QComboBox()
-        self._theme_combo.addItems(["Dark (Deep Space)", "Dark (Classic)"])
+        self._theme_combo.addItems(["Dark (Deep Space)", "Dark (Classic)", "Light"])
         form.addRow("Theme:", self._theme_combo)
+
+        restart_hint = QLabel("Theme changes take effect on restart.")
+        restart_hint.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: 9px;")
+        form.addRow(restart_hint)
 
         self._font_size_spin = QSpinBox()
         self._font_size_spin.setRange(8, 16)

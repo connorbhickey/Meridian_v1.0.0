@@ -37,6 +37,8 @@ a = Analysis(
         "portopt.engine.tax_harvest",
         "portopt.engine.stress",
         "portopt.engine.rolling",
+        "portopt.engine.strategy_compare",
+        "portopt.engine.execution",
         "portopt.data.providers.yfinance_provider",
         "portopt.data.providers.alphavantage_provider",
         "portopt.data.providers.tiingo_provider",

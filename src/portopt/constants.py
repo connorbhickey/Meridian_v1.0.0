@@ -5,7 +5,7 @@ from enum import Enum, auto
 
 # ── Application ──────────────────────────────────────────────────────
 APP_NAME = "Meridian"
-APP_VERSION = "2.1.1"
+APP_VERSION = "3.0.0"
 APP_ORG = "Meridian"
 MAX_ASSETS = 100
 
@@ -74,6 +74,72 @@ class Colors:
         "Communication Services": "#d946ef",
         "Other": "#8b949e",
     }
+
+
+# ── Light Palette (direct inversion of Deep Space) ──────────────────
+_LIGHT_PALETTE = {
+    # Backgrounds (inverted — light surfaces)
+    "BG_PRIMARY": "#f6f8fa",
+    "BG_SECONDARY": "#ffffff",
+    "BG_TERTIARY": "#ebedf0",
+    "BG_INPUT": "#ffffff",
+    "BG_ELEVATED": "#d8dce0",
+
+    # Borders
+    "BORDER": "#d0d7de",
+    "BORDER_LIGHT": "#afb8c1",
+
+    # Text hierarchy (inverted — dark text on light)
+    "TEXT_PRIMARY": "#1f2328",
+    "TEXT_SECONDARY": "#32383f",
+    "TEXT_MUTED": "#656d76",
+    "TEXT_DISABLED": "#8c959f",
+
+    # Accent (same Arctic Cyan, slightly deepened for contrast on white)
+    "ACCENT": "#0096b7",
+    "ACCENT_HOVER": "#007a96",
+    "ACCENT_LIGHT": "#00b8d9",
+    "ACCENT_DIM": "#daf4fb",
+    "ACCENT_GLOW": "rgba(0,150,183,0.08)",
+
+    # Semantic (slightly deepened for readability on light)
+    "PROFIT": "#16a34a",
+    "PROFIT_DIM": "#dcfce7",
+    "LOSS": "#dc2626",
+    "LOSS_DIM": "#fee2e2",
+    "WARNING": "#ca8a04",
+    "WARNING_DIM": "#fef9c3",
+
+    # Extended palette
+    "PURPLE": "#9333ea",
+    "PINK": "#db2777",
+    "GRID": "#e5e7eb",
+
+    # Heatmap gradient
+    "HEATMAP_NEG": "#dc2626",
+    "HEATMAP_ZERO": "#ffffff",
+    "HEATMAP_POS": "#16a34a",
+
+    # Chart palette (slightly deeper for light bg contrast)
+    "CHART_PALETTE": [
+        "#0096b7", "#16a34a", "#ca8a04", "#9333ea", "#db2777",
+        "#0891b2", "#ea580c", "#65a30d", "#4f46e5", "#e11d48",
+    ],
+}
+
+
+def apply_palette(name: str) -> None:
+    """Overwrite Colors class attributes with the named palette.
+
+    Must be called before any GUI widgets are created.
+    Supported names: 'dark' (no-op, already default), 'light'.
+    """
+    if name == "dark":
+        return  # Colors already has dark values at class-definition time
+    if name != "light":
+        return
+    for attr, value in _LIGHT_PALETTE.items():
+        setattr(Colors, attr, value)
 
 
 # ── Fonts ────────────────────────────────────────────────────────────
